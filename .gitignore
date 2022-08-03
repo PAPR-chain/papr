@@ -1,0 +1,8 @@
+tmp*
+back_*
+*__pycache__*
+*.swp
+*.swo
+old*
+_*
+*.json
