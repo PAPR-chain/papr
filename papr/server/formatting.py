@@ -8,4 +8,4 @@ def format_formal_review(reviews):
         txt += "\n\n\n"
 
     txt += "--- END OF REVIEW ---"
-
+    return txt

@@ -5,4 +5,5 @@ back_*
 *.swo
 old*
 _*
+!__init__.py
 *.json

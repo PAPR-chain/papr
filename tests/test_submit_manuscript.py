@@ -26,7 +26,7 @@ class DevTestCase(CommandTestCase):
         chan = await self.channel_create(name="@Steve", bid="0.001")
         file_path = os.path.join(TESTS_DIR, "data", "document1.pdf")
 
-        man = Manuscript(self.config)
+        man = Manuscript(self.config, "unused_review_passphrase")
         hash_i = file_sha256(file_path)
         tx = await man.create_submission(name="test", bid="0.001", file_path=file_path, title="My title", abstract="we did great stuff", author="Steve Tremblay and Bob Roberts", tags=["test"], channel_id=chan['outputs'][0]['claim_id'], channel_name=chan['outputs'][0]['name'], daemon=self.daemon, encrypt=False)
 
@@ -58,7 +58,7 @@ class DevTestCase(CommandTestCase):
         chan = await self.channel_create(name="@Steve", bid="0.001")
         file_path = os.path.join(TESTS_DIR, "data", "document1.pdf")
 
-        man = Manuscript(self.config)
+        man = Manuscript(self.config, "unused_review_passphrase")
         hash_i = file_sha256(file_path)
         tx = await man.create_submission(name="test", bid="0.001", file_path=file_path, title="My title", abstract="we did great stuff", author="Steve Tremblay and Bob Roberts", tags=["test"], channel_id=chan['outputs'][0]['claim_id'], channel_name=chan['outputs'][0]['name'], daemon=self.daemon, encrypt=True)
 

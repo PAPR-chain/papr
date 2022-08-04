@@ -1,3 +1,6 @@
+import binascii
+
+REVIEW_APPENDIX_TXT = '\n*** SIGNATURE ***\n'
 
 WORDS = [
 'organic',
