@@ -1,0 +1,3 @@
+
+class UninitializedException(Exception):
+    pass
