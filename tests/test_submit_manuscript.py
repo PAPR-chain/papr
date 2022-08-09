@@ -34,7 +34,7 @@ class DevTestCase(CommandTestCase):
 
         man = Manuscript(self.config, "unused_review_passphrase")
         hash_i = file_sha256(file_path)
-        tx = await man.create_submission(name="test", bid="0.001", file_path=file_path, title="My title", abstract="we did great stuff", author="Steve Tremblay and Bob Roberts", tags=["test"], user=user, daemon=self.daemon, encrypt=False)
+        tx = await man.create_submission(name="test", bid="0.001", file_path=file_path, title="My title", abstract="we did great stuff", author="Steve Tremblay and Bob Roberts", tags=["test"], user=user, encrypt=False)
 
         await self.generate(5)
 
@@ -68,7 +68,7 @@ class DevTestCase(CommandTestCase):
 
         man = Manuscript(self.config, "unused_review_passphrase")
         hash_i = file_sha256(file_path)
-        tx = await man.create_submission(name="test", bid="0.001", file_path=file_path, title="My title", abstract="we did great stuff", author="Steve Tremblay and Bob Roberts", tags=["test"], user=user, daemon=self.daemon, encrypt=True)
+        tx = await man.create_submission(name="test", bid="0.001", file_path=file_path, title="My title", abstract="we did great stuff", author="Steve Tremblay and Bob Roberts", tags=["test"], user=user, encrypt=True)
 
         await self.generate(5)
 

@@ -13,7 +13,7 @@ class Manuscript:
         self.config = config
         self.review_passphrase = review_passphrase
 
-    async def create_submission(self, name, bid, file_path, title, abstract, author, tags, user, daemon, encrypt=False):
+    async def create_submission(self, name, bid, file_path, title, abstract, author, tags, user, encrypt=False):
         if not os.path.isfile(file_path):
             logger.error(f"Cannot create a new manuscript: file {file_path} does not exist")
             return
@@ -50,5 +50,5 @@ class Manuscript:
             z.writestr(f"{name}_key.pub", self.public_key)
 
         # Thumbnail
-        tx = await daemon.jsonrpc_stream_create(name, bid, file_path=zip_path, title=title, author=author, description=abstract, tags=tags, channel_id=user.channel_id, channel_name=user.channel_name)
+        tx = await user.daemon.jsonrpc_stream_create(name, bid, file_path=zip_path, title=title, author=author, description=abstract, tags=tags, channel_id=user.channel_id, channel_name=user.channel_name)
         return tx

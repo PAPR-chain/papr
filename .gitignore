@@ -7,3 +7,4 @@ old*
 _*
 !__init__.py
 *.json
+run_tests.sh
