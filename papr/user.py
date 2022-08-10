@@ -32,3 +32,14 @@ class User:
         if not self.channel:
             raise UninitializedException(f"User has no channel")
         return self.channel.public_key_bytes
+
+    ### Network interaction utilities
+    async def verify_claim_free(self, name):
+        hits = await self.daemon.jsonrpc_resolve(name)
+
+        ll = len(hits[name])
+        logger.warning(f"Found {ll} claims with name {name}")
+
+        if ll > 0:
+            return False
+        return True

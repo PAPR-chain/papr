@@ -4,8 +4,6 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.backends import default_backend
 
-#import rsa
-
 from .constants import WORDS
 from .settings import ENCRYPTION_NUM_WORDS, CHUNK_SIZE
 

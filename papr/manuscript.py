@@ -4,11 +4,12 @@ import os
 
 from lbry.crypto.crypt import better_aes_encrypt, better_aes_decrypt
 
-from .settings import CHUNK_SIZE
-from .utilities import generate_human_readable_passphrase, generate_rsa_keys
+from papr.settings import CHUNK_SIZE
+from papr.utilities import generate_human_readable_passphrase, generate_rsa_keys
 
 
 class Manuscript:
+    ### Load from file
     def __init__(self, config, review_passphrase, **args):
         self.config = config
         self.review_passphrase = review_passphrase
@@ -45,10 +46,27 @@ class Manuscript:
             out.write(self.public_key)
 
         zip_path = os.path.join(self.config.submission_dir, name + '.zip')
-        with zipfile.ZipFile(zip_path, 'w') as z: # check if exists...
+
+        if os.path.isfile(zip_path):
+            logger.error(f"You have already submitted a manuscript with this name!")
+            return None
+
+        is_free = await verify_claim_free(name)
+
+        if not is_free:
+            logger.error(f"Cannot submit manuscript: another claim with this name exists")
+            return None
+
+        with zipfile.ZipFile(zip_path, 'w') as z:
             z.writestr(f"Manuscript_{name}.pdf", processed_file) # pdf hardcoded
             z.writestr(f"{name}_key.pub", self.public_key)
 
         # Thumbnail
         tx = await user.daemon.jsonrpc_stream_create(name, bid, file_path=zip_path, title=title, author=author, description=abstract, tags=tags, channel_id=user.channel_id, channel_name=user.channel_name)
         return tx
+
+    async def submit_revision(self, name, bid, file_path, title, abstract, author, tags, user, encrypt=False):
+        pass
+
+    async def calculate_rating(self):
+        pass
