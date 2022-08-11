@@ -1,6 +1,8 @@
 import logging
 import json
 
+from lbry.wallet.transaction import Output
+
 from papr.exceptions import UninitializedException
 
 logger = logging.getLogger(__name__)
@@ -9,6 +11,17 @@ class User:
     def __init__(self, daemon):
         self.daemon = daemon
         self.channel = None
+
+    async def channel_load(self, name):
+        tx = await self.daemon.jsonrpc_channel_list()
+        for res in tx['items']:
+            if res.claim_name == name:
+                self.channel_id = res.claim_id
+                self.channel_name = res.claim_name
+                self.channel = res.claim.channel
+                break
+        else:
+            raise Exception(f"Could not find channel {name}")
 
     async def channel_create(self, name, bid, **kwargs):
         tx = await self.daemon.jsonrpc_channel_create(name=name, bid=bid, **kwargs)
@@ -37,9 +50,11 @@ class User:
     async def verify_claim_free(self, name):
         hits = await self.daemon.jsonrpc_resolve(name)
 
-        ll = len(hits[name])
-        logger.warning(f"Found {ll} claims with name {name}")
+        if not isinstance(hits[name], Output):
+            logger.info(f"Found no claim with name {name}")
+            return True
 
-        if ll > 0:
-            return False
-        return True
+        logger.warning(f"Found claim(s) with name {name}")
+
+        return False
+
