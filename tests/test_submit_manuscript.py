@@ -33,7 +33,7 @@ class DevTestCase(CommandTestCase):
 
         file_path = os.path.join(TESTS_DIR, "data", "document1.pdf")
 
-        man = Manuscript(self.config, "unused_review_passphrase")
+        man = Manuscript(self.config, user.network, "unused_review_passphrase")
         hash_i = file_sha256(file_path)
         tx = await man.create_submission(name="test", bid="0.001", file_path=file_path, title="My title", abstract="we did great stuff", author="Steve Tremblay and Bob Roberts", tags=["test"], user=user, encrypt=False)
 
@@ -67,7 +67,7 @@ class DevTestCase(CommandTestCase):
 
         file_path = os.path.join(TESTS_DIR, "data", "document1.pdf")
 
-        man = Manuscript(self.config, "unused_review_passphrase")
+        man = Manuscript(self.config, user.network, "unused_review_passphrase")
         hash_i = file_sha256(file_path)
         tx = await man.create_submission(name="tremblay-project", bid="0.001", file_path=file_path, title="My title", abstract="we did great stuff", author="Steve Tremblay and Bob Roberts", tags=["test"], user=user, encrypt=True)
 
@@ -110,7 +110,7 @@ class DevTestCase(CommandTestCase):
 
         file_path = os.path.join(TESTS_DIR, "data", "document1.pdf")
 
-        man = Manuscript(self.config, "unused_review_passphrase")
+        man = Manuscript(self.config, user.network, "unused_review_passphrase")
         hash_i = file_sha256(file_path)
         tx = await man.create_submission(name="test", bid="0.001", file_path=file_path, title="My title", abstract="we did great stuff", author="Steve Tremblay and Bob Roberts", tags=["test"], user=user, encrypt=False)
 
@@ -122,7 +122,7 @@ class DevTestCase(CommandTestCase):
 
         file_path2 = os.path.join(TESTS_DIR, "data", "document2.pdf")
 
-        man = Manuscript(self.config, "unused_review_passphrase2")
+        man = Manuscript(self.config, user.network, "unused_review_passphrase2")
         hash_i = file_sha256(file_path)
 
         with warnings.catch_warnings():
@@ -146,7 +146,7 @@ class DevTestCase(CommandTestCase):
 
         file_path = os.path.join(TESTS_DIR, "data", "document1.pdf")
 
-        man = Manuscript(self.config, "unused_review_passphrase")
+        man = Manuscript(self.config, user.network, "unused_review_passphrase")
         hash_i = file_sha256(file_path)
         tx = await man.create_submission(name="test", bid="0.001", file_path=file_path, title="My title", abstract="we did great stuff", author="Steve Tremblay and Bob Roberts", tags=["test"], user=user, encrypt=False)
 
@@ -160,7 +160,7 @@ class DevTestCase(CommandTestCase):
 
         file_path2 = os.path.join(TESTS_DIR, "data", "document2.pdf")
 
-        man = Manuscript(self.config, "unused_review_passphrase2")
+        man = Manuscript(self.config, user.network, "unused_review_passphrase2")
         hash_i = file_sha256(file_path)
 
         tx = await man.create_submission(name="test", bid="0.001", file_path=file_path, title="My other title", abstract="we did some more great stuff", author="Steve Tremblay and Bob Roberts", tags=["test"], user=user, encrypt=False)
@@ -187,7 +187,7 @@ class DevTestCase(CommandTestCase):
 
         file_path = os.path.join(TESTS_DIR, "data", "document1.pdf")
 
-        man = Manuscript(self.config, "unused_review_passphrase")
+        man = Manuscript(self.config, user2.network, "unused_review_passphrase")
         tx = await man.create_submission(name="test", bid="0.001", file_path=file_path, title="My title", abstract="we did great stuff", author="Steve Tremblay and Bob Roberts", tags=["test"], user=user2, encrypt=False, ignore_duplicate_names=True)
         os.remove(os.path.join(self.config.submission_dir, 'test.zip'))
 
@@ -207,7 +207,7 @@ class DevTestCase(CommandTestCase):
 
         file_path = os.path.join(TESTS_DIR, "data", "document2.pdf")
 
-        man = Manuscript(self.config, "unused_review_passphrase")
+        man = Manuscript(self.config, user3.network, "unused_review_passphrase")
         tx = await man.create_submission(name="test", bid="0.002", file_path=file_path, title="My title", abstract="we did great stuff", author="Steve Tremblay and Bob Roberts", tags=["test"], user=user3, encrypt=False, ignore_duplicate_names=True)
         os.remove(os.path.join(self.config.submission_dir, 'test.zip'))
 
@@ -222,7 +222,7 @@ class DevTestCase(CommandTestCase):
 
         file_path2 = os.path.join(TESTS_DIR, "data", "document3.pdf")
 
-        man = Manuscript(self.config, "unused_review_passphrase2")
+        man = Manuscript(self.config, user.network, "unused_review_passphrase2")
 
         tx = await man.create_submission(name="test", bid="0.001", file_path=file_path, title="My other title", abstract="we did some more great stuff", author="Steve Tremblay and Bob Roberts", tags=["test"], user=user, encrypt=False)
 

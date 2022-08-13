@@ -12,8 +12,9 @@ logger = logging.getLogger(__name__)
 
 class Manuscript:
     ### Load from file
-    def __init__(self, config, review_passphrase, **args):
+    def __init__(self, config, network, review_passphrase, **args):
         self.config = config
+        self.network = network
         self.review_passphrase = review_passphrase
 
     async def create_submission(self, name, bid, file_path, title, abstract, author, tags, user, encrypt=False, ignore_duplicate_names=False):
@@ -54,7 +55,7 @@ class Manuscript:
             return None
 
         if not ignore_duplicate_names:
-            is_free = await user.verify_claim_free(name)
+            is_free = await self.network.verify_claim_free(name)
 
             if not is_free:
                 logger.error(f"Cannot submit manuscript: another claim with this name exists")

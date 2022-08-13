@@ -1,16 +1,33 @@
+import os
 import logging
 import json
 
-from lbry.wallet.transaction import Output
-
 from papr.exceptions import UninitializedException
+from papr.network import Network
+from papr.settings import USERDATA_DIR
 
 logger = logging.getLogger(__name__)
 
 class User:
-    def __init__(self, daemon):
+    def __init__(self, daemon, identifier=None, network=None):
         self.daemon = daemon
+        self.identifier = identifier # Name of the user profile, used when storing userdata to disk
+        if identifier:
+            self.userdata_load()
+
         self.channel = None
+        if network:
+            self.network = network
+        else:
+            self.network = Network(daemon)
+
+    def userdata_load(self):
+        d = os.path.join(USERDATA_DIR, self.identifier)
+        if not os.path.isdir(d):
+            os.makedirs(d, exist_ok=True)
+            return
+
+        # TODO: load data
 
     async def channel_load(self, name):
         tx = await self.daemon.jsonrpc_channel_list()
@@ -46,15 +63,4 @@ class User:
             raise UninitializedException(f"User has no channel")
         return self.channel.public_key_bytes
 
-    ### Network interaction utilities
-    async def verify_claim_free(self, name):
-        hits = await self.daemon.jsonrpc_resolve(name)
-
-        if not isinstance(hits[name], Output):
-            logger.info(f"Found no claim with name {name}")
-            return True
-
-        logger.warning(f"Found claim(s) with name {name}")
-
-        return False
 
