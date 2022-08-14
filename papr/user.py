@@ -24,7 +24,7 @@ class User:
     def userdata_load(self):
         d = os.path.join(USERDATA_DIR, self.identifier)
         if not os.path.isdir(d):
-            os.makedirs(d, exist_ok=True)
+            #os.makedirs(d, exist_ok=True)
             return
 
         # TODO: load data
@@ -43,6 +43,7 @@ class User:
     async def channel_create(self, name, bid, **kwargs):
         tx = await self.daemon.jsonrpc_channel_create(name=name, bid=bid, **kwargs)
         logger.info(f"Initiated the creation of channel {name} with bid {bid}...")
+
         await self.daemon.ledger.wait(tx)
 
         self.channel_id = tx.outputs[0].claim_id
@@ -50,6 +51,7 @@ class User:
 
         self.channel = tx.outputs[0].claim.channel
         logger.info(f"Channel {self.channel_name} created with bid {bid}")
+        print("done")
 
     @property
     def public_key(self):
