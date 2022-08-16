@@ -79,7 +79,7 @@ class ServerTestCase(CommandTestCase):
 
         # finding channel flaky 
 
-        signed_review = await sign_review("submission-name", "", review, rev_daemon, "@Reviewer2")
+        signed_review = await sign_review("submission-name", "123456", review, rev_daemon, "@Reviewer2")
 
         assert verify_identity(self.daemon, signed_review, "@Reviewer2")
 
