@@ -1,5 +1,15 @@
-import warning
+import os
+import sys
 import json
+import logging
+import appdirs
+
+IS_TEST = 'unittest' in sys.modules
+
+if IS_TEST:
+    USERDATA_DIR = '/tmp/'
+else:
+    USERDATA_DIR = appdirs.user_data_dir("papr", "papr")
 
 CHUNK_SIZE = 4096
 ENCRYPTION_NUM_WORDS = 7
@@ -11,14 +21,4 @@ class Config:
         self.submission_dir = submission_dir
         self.review_dir = review_dir
 
-    def load_from_json(self, path):
-        try:
-            data = json.loads(path)
-        except json.JSONDecodeError:
-            logger.error(f"Cannot decode configuration of {path}")
-            return
 
-        for k, v in data.items():
-            setattr(self, k, v)
-
-        logger.info(f"Configuration successfully loaded from {path}")

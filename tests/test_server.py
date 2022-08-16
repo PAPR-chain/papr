@@ -75,9 +75,7 @@ class ServerTestCase(CommandTestCase):
         reviewer = await rev_daemon.jsonrpc_channel_create(name="@Reviewer2", bid="0.001")
         review = "Everything about this work is bad"
 
-        await self.generate(10)
-
-        # finding channel flaky 
+        await self.generate(100)
 
         signed_review = await sign_review("submission-name", "123456", review, rev_daemon, "@Reviewer2")
 

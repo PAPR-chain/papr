@@ -1,3 +1,4 @@
+import logging
 import asyncio
 import zipfile
 import os
@@ -7,11 +8,13 @@ from lbry.crypto.crypt import better_aes_encrypt, better_aes_decrypt
 from papr.settings import CHUNK_SIZE
 from papr.utilities import generate_human_readable_passphrase, generate_rsa_keys
 
+logger = logging.getLogger(__name__)
 
 class Manuscript:
     ### Load from file
-    def __init__(self, config, review_passphrase, **args):
+    def __init__(self, config, network, review_passphrase, **args):
         self.config = config
+        self.network = network
 
         # Passphrase to encrypt communications between reviewers and authors during the review process, mandatory (?)
         # Used to encrypt the RSA private key
@@ -23,6 +26,7 @@ class Manuscript:
         self.status = 0
 
     async def _publish(self, claim_name, bid, file_path, title, abstract, author, tags, user, revision=0, encrypt=True, official=False):
+
         if not os.path.isfile(file_path):
             logger.error(f"Cannot create a new manuscript: file {file_path} does not exist")
             return # return error?
@@ -49,11 +53,12 @@ class Manuscript:
             logger.error(f"You have already submitted a manuscript with this name!")
             return None
 
-        is_free = await verify_claim_free(claim_name)
+        if not ignore_duplicate_names:
+            is_free = await self.network.verify_claim_free(name)
 
-        if not is_free:
-            logger.error(f"Cannot submit manuscript: another claim with this name exists")
-            return None
+            if not is_free:
+                logger.error(f"Cannot submit manuscript: another claim with this name exists")
+                return None
 
         with zipfile.ZipFile(zip_path, 'w') as z:
             z.writestr(f"Manuscript_{claim_name}.pdf", processed_file) # pdf hardcoded
