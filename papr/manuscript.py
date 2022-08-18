@@ -25,7 +25,7 @@ class Manuscript:
 
         self.status = 0
 
-    async def _publish(self, claim_name, bid, file_path, title, abstract, author, tags, user, revision=0, encrypt=True, official=False):
+    async def _publish(self, claim_name, bid, file_path, title, abstract, author, tags, user, revision=0, encrypt=True, official=False, ignore_duplicate_names=False):
 
         if not os.path.isfile(file_path):
             logger.error(f"Cannot create a new manuscript: file {file_path} does not exist")
@@ -54,7 +54,7 @@ class Manuscript:
             return None
 
         if not ignore_duplicate_names:
-            is_free = await self.network.verify_claim_free(name)
+            is_free = await self.network.verify_claim_free(claim_name)
 
             if not is_free:
                 logger.error(f"Cannot submit manuscript: another claim with this name exists")
@@ -62,13 +62,13 @@ class Manuscript:
 
         with zipfile.ZipFile(zip_path, 'w') as z:
             z.writestr(f"Manuscript_{claim_name}.pdf", processed_file) # pdf hardcoded
-            z.writestr(f"{name}_key.pub", self.public_key)
+            z.writestr(f"{claim_name}_key.pub", self.public_key) # just name?
 
         # Thumbnail
         tx = await user.daemon.jsonrpc_stream_create(claim_name, bid, file_path=zip_path, title=title, author=author, description=abstract, tags=tags, channel_id=user.channel_id, channel_name=user.channel_name)
         return tx
 
-    async def create_submission(self, name, bid, file_path, title, abstract, author, tags, user, encrypt=False):
+    async def create_submission(self, name, bid, file_path, title, abstract, author, tags, user, encrypt=False, **kwargs):
         if encrypt:
             self.encryption_passphrase = generate_human_readable_passphrase()
 
@@ -83,16 +83,16 @@ class Manuscript:
         self.status = 1 #?
 
         claim_name = f"{name}_preprint"
-        return await self._publish(claim_name, bid, file_path, title, abstract, author, tags, user, revision=0, encrypt=encrypt)
+        return await self._publish(claim_name, bid, file_path, title, abstract, author, tags, user, revision=0, encrypt=encrypt, **kwargs)
 
 
-    async def submit_revision(self, name, bid, file_path, title, abstract, author, tags, user, revision, encrypt=True):
+    async def submit_revision(self, name, bid, file_path, title, abstract, author, tags, user, revision, encrypt=True, **kwargs):
         claim_name = f"{name}_r{revision}"
-        return await self._publish(claim_name, bid, file_path, title, abstract, author, tags, user, revision=revision, encrypt=encrypt)
+        return await self._publish(claim_name, bid, file_path, title, abstract, author, tags, user, revision=revision, encrypt=encrypt, **kwargs)
 
-    async def submit_official_version(self, name, bid, file_path, title, abstract, author, tags, user):
+    async def submit_official_version(self, name, bid, file_path, title, abstract, author, tags, user, **kwargs):
         claim_name = f"{name}_v1"
-        return await self._publish(claim_name, bid, file_path, title, abstract, author, tags, user, encrypt=False, official=True)
+        return await self._publish(claim_name, bid, file_path, title, abstract, author, tags, user, encrypt=False, official=True, **kwargs)
 
     async def calculate_rating(self):
         pass

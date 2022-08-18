@@ -11,13 +11,13 @@ DEFAULT_CONFIG = {
             "lbryum_servers": [('127.0.0.1', 50001)],
 }
 
-def call(method, **kwargs):
-    #data = json.dumps({"jsonrpc": "2.0", "method": method, "params": kwargs})
-    data = {"jsonrpc": "2.0", "method": method, "params": kwargs}
-    print(data)
 
+def call(method, **kwargs):
+    data = {"jsonrpc": "2.0", "method": method, "params": kwargs}
+    url = "http://localhost:5279/"
     headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
-    return requests.post("http://localhost:5279/", json=data, headers=headers)
+
+    return requests.post(url, json=data, headers=headers)
 
 
 @click.group()
@@ -26,11 +26,10 @@ def cli():
 
 @cli.command()
 def status():
-    #d = run(get_daemon())
-    #print(d)
-    ret = call("status")
-    print(ret.json())
-    print("status")
+    resp = call("status")
+    print(resp)
+
+    return resp
 
 @cli.command()
 @click.argument('path', type=click.Path(exists=True))
@@ -51,10 +50,10 @@ def create_channel(name, yes):
             print("Channel creation aborted!")
             return
 
-    #r = call("lbry_channel_create", name=name, bid="0.1")
-    #print(r)
-    #print(r.content)
+    # Actually create the channel 
+
     print("Channel created!")
+    return
 
 if __name__ == "__main__":
     cli()

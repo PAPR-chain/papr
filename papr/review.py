@@ -1,4 +1,5 @@
 import binascii
+import time
 
 from papr.constants import REVIEW_APPENDIX_TXT
 
@@ -11,7 +12,7 @@ async def sign_review(sub_name, sub_url, review, daemon, channel_name): # channe
     signed = await daemon.jsonrpc_channel_sign(channel_name=channel_name, hexdata=review_hex)
 
     # TODO: encrypt for server?
-u   signed_review = f"{full_review}{REVIEW_APPENDIX_TXT}{signed['signature']}\n{signed['signing_ts']}"
+    signed_review = f"{full_review}{REVIEW_APPENDIX_TXT}{signed['signature']}\n{signed['signing_ts']}"
 
     return signed_review
 

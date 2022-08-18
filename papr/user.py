@@ -51,7 +51,6 @@ class User:
 
         self.channel = tx.outputs[0].claim.channel
         logger.info(f"Channel {self.channel_name} created with bid {bid}")
-        print("done")
 
     @property
     def public_key(self):
