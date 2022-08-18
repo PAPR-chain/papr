@@ -2,16 +2,16 @@ import asyncio
 import os
 import tempfile
 import logging
-import aiohttp
 from zipfile import ZipFile
-from unittest.mock import patch
 from click.testing import CliRunner
 from functools import partial
 from syncer import sync
 
 from lbry.testcase import CommandTestCase
+from lbry.schema.claim import Channel
 
 
+from papr.user import User
 from papr.testcase import PaprDaemonTestCase
 from papr.manuscript import Manuscript
 from papr.review import sign_review
@@ -35,25 +35,65 @@ class CliTestCase(CommandTestCase):
             self.config = Config(review_dir=tmpdir)
             super().run(result)
 
-    def call(self, args):
+    def _call(self, args):
         runner = CliRunner()
         result = runner.invoke(cli.cli, args, catch_exceptions=False, standalone_mode=False)
 
-        '''
-        if result.output:
-            print(result.output)
-        if result.exception:
-            print(result.exception)
-        '''
-
         return result
 
-    async def test_create_channel(self):
+    async def call(self, cmd):
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._call, cmd.split())
+
+    async def test_status(self):
         await self.daemon.start()
 
-        loop = asyncio.get_event_loop()
-        result = await loop.run_in_executor(None, self.call, ["status"])
+        result = await self.call("status")
 
-        self.assertEqual(result.exit_code, 0)
-        self.assertEqual(result.return_value.status_code, 200)
-        self.assertIn('jsonrpc', result.return_value.json())
+        self.assertEqual(result.return_value, "Success")
+
+    async def test_create_channel_success(self):
+        await self.daemon.start()
+
+        result = await self.call("create-channel @Steve --yes")
+
+        self.assertEqual(result.return_value, "Success")
+
+        await self.generate(5)
+
+        user = User(self.daemon)
+        await user.channel_load("@Steve")
+
+        self.assertTrue(isinstance(user.channel, Channel))
+
+    async def test_create_channel_success_custom_bid(self):
+        await self.daemon.start()
+
+        result = await self.call("create-channel @Steve --yes -b 0.1234")
+
+        self.assertEqual(result.return_value, "Success")
+
+        await self.generate(10)
+
+        user = User(self.daemon)
+        await user.channel_load("@Steve")
+
+        self.assertTrue(isinstance(user.channel, Channel))
+
+        channels = await self.daemon.jsonrpc_channel_list()
+
+        self.assertEqual(channels['items'][0].amount, 12340000)
+
+    async def test_create_channel_insufficient_funds(self):
+        daemon2 = await self.add_daemon()
+        await daemon2.start()
+
+        result = await self.call("create-channel @Steve --yes")
+
+        self.assertEqual(result.return_value, "Insufficient Funds")
+
+        user = User(daemon2)
+        with self.assertRaises(Exception):
+            await user.channel_load("@Steve")
+
+        self.assertIsNone(user.channel)

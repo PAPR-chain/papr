@@ -29,7 +29,7 @@ def status():
     resp = call("status")
     print(resp)
 
-    return resp
+    return "Success"
 
 @cli.command()
 @click.argument('path', type=click.Path(exists=True))
@@ -39,8 +39,9 @@ def publish(path, encrypt):
 
 @cli.command()
 @click.argument('name')
+@click.option('--bid', '-b', default="0.0001", help="Amount of LBC to bid in support of the channel claim")
 @click.option('--yes', '-y', is_flag=True, help="Do not ask for confirmation")
-def create_channel(name, yes):
+def create_channel(name, bid, yes):
     if name[0] != "@":
         name = "@" + name
 
@@ -50,10 +51,18 @@ def create_channel(name, yes):
             print("Channel creation aborted!")
             return
 
-    # Actually create the channel 
+    resp = call("channel_create", name=name, bid=bid)
+    data = resp.json()
 
-    print("Channel created!")
-    return
+    if 'error' in data:
+        if data['error']['data']['name'] == "InsufficientFundsError":
+            print("Your account has insufficient funds to create a channel with this bid")
+            return "Insufficient Funds"
+        else:
+            print(f"Could not create your account due to an error: {data['error']['data']['name']}")
+    else:
+        print("Channel created!")
+        return "Success"
 
 if __name__ == "__main__":
     cli()
