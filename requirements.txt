@@ -1,6 +1,5 @@
 appdirs
 click
-cryptography>=35.0.0
 requests
-git+https://github.com/lbryio/lbry-sdk
+git+https://github.com/lbryio/lbry-sdk@dependabot/pip/cryptography-3.3.2
 git+https://github.com/lbryio/hub
