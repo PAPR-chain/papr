@@ -25,10 +25,10 @@ from papr import cli
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
 class CliTestCase(CommandTestCase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
 
     def run(self, result=None):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -37,7 +37,9 @@ class CliTestCase(CommandTestCase):
 
     def _call(self, args):
         runner = CliRunner()
-        result = runner.invoke(cli.cli, args, catch_exceptions=False, standalone_mode=False)
+        result = runner.invoke(
+            cli.cli, args, catch_exceptions=False, standalone_mode=False
+        )
 
         return result
 
@@ -82,7 +84,7 @@ class CliTestCase(CommandTestCase):
 
         channels = await self.daemon.jsonrpc_channel_list()
 
-        self.assertEqual(channels['items'][0].amount, 12340000)
+        self.assertEqual(channels["items"][0].amount, 12340000)
 
     async def test_create_channel_insufficient_funds(self):
         daemon2 = await self.add_daemon()

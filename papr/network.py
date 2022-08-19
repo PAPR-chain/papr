@@ -4,6 +4,7 @@ from lbry.wallet.transaction import Output
 
 logger = logging.getLogger(__name__)
 
+
 class Network:
     def __init__(self, daemon):
         self.daemon = daemon
@@ -18,4 +19,3 @@ class Network:
         logger.warning(f"Found claim(s) with name {name}")
 
         return False
-

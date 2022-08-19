@@ -1,4 +1,3 @@
-
 def format_formal_review(reviews):
     txt = "--- BEGINNING OF REVIEW ---"
 

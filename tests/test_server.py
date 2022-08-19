@@ -17,6 +17,7 @@ from papr.utilities import generate_rsa_keys, rsa_decrypt_text, read_all_bytes
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
 class ServerTestCase(CommandTestCase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -31,32 +32,48 @@ class ServerTestCase(CommandTestCase):
         chan = await self.channel_create(name="@Server", bid="0.001")
         sub_chan = await self.channel_create(name="@CorrespondingAuthor", bid="0.001")
 
-        server = Server("Test PAPR server", self.daemon, chan['outputs'][0])
+        server = Server("Test PAPR server", self.daemon, chan["outputs"][0])
 
         rev = FormalReview(self.config, server)
 
-        reviews = ["pretty groundbreaking stuff, 2/10", "perfect, just cite me a lot more"]
-        privkey, pubkey = generate_rsa_keys("testpassword") # Hypothetical author RSA keys
+        reviews = [
+            "pretty groundbreaking stuff, 2/10",
+            "perfect, just cite me a lot more",
+        ]
+        privkey, pubkey = generate_rsa_keys(
+            "testpassword"
+        )  # Hypothetical author RSA keys
 
-        tx = await rev.publish_review(sub_name="tremblay-test-manuscript", sub_channel_id=sub_chan['outputs'][0]['claim_id'], author_pubkey=pubkey, reviews=reviews)
+        tx = await rev.publish_review(
+            sub_name="tremblay-test-manuscript",
+            sub_channel_id=sub_chan["outputs"][0]["claim_id"],
+            author_pubkey=pubkey,
+            reviews=reviews,
+        )
 
         await self.generate(5)
 
         ll = await self.daemon.jsonrpc_stream_list()
-        assert len(ll['items']) == 1
-        pub = ll['items'][0]
+        assert len(ll["items"]) == 1
+        pub = ll["items"][0]
 
-        res = await self.daemon.jsonrpc_resolve('tremblay-test-manuscript_review1')
-        assert res['tremblay-test-manuscript_review1'].permanent_url == pub.permanent_url
+        res = await self.daemon.jsonrpc_resolve("tremblay-test-manuscript_review1")
+        assert (
+            res["tremblay-test-manuscript_review1"].permanent_url == pub.permanent_url
+        )
 
-        await self.daemon.jsonrpc_file_save('review', self.daemon.conf.data_dir, claim_name="tremblay-test-manuscript_review1")
+        await self.daemon.jsonrpc_file_save(
+            "review",
+            self.daemon.conf.data_dir,
+            claim_name="tremblay-test-manuscript_review1",
+        )
 
-        assert os.path.isfile(os.path.join(self.daemon.conf.data_dir, 'review'))
+        assert os.path.isfile(os.path.join(self.daemon.conf.data_dir, "review"))
 
-        enc_review = read_all_bytes(os.path.join(self.daemon.conf.data_dir, 'review'))
+        enc_review = read_all_bytes(os.path.join(self.daemon.conf.data_dir, "review"))
 
         try:
-            pseudo_dec_review = enc_review.decode('UTF-8')
+            pseudo_dec_review = enc_review.decode("UTF-8")
         except UnicodeDecodeError:
             pass
         else:
@@ -70,15 +87,19 @@ class ServerTestCase(CommandTestCase):
 
     async def test_verify_reviewer_identity(self):
         rev_daemon = await self.add_daemon()
-        rev_addr = await rev_daemon.wallet_manager.default_account.receiving.get_or_create_usable_address()
+        rev_addr = (
+            await rev_daemon.wallet_manager.default_account.receiving.get_or_create_usable_address()
+        )
         await self.send_to_address_and_wait(rev_addr, 2, 1, ledger=rev_daemon.ledger)
-        reviewer = await rev_daemon.jsonrpc_channel_create(name="@Reviewer2", bid="0.001")
+        reviewer = await rev_daemon.jsonrpc_channel_create(
+            name="@Reviewer2", bid="0.001"
+        )
         review = "Everything about this work is bad"
 
         await self.generate(100)
 
-        signed_review = await sign_review("submission-name", "123456", review, rev_daemon, "@Reviewer2")
+        signed_review = await sign_review(
+            "submission-name", "123456", review, rev_daemon, "@Reviewer2"
+        )
 
         assert verify_identity(self.daemon, signed_review, "@Reviewer2")
-
-

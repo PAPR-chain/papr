@@ -7,19 +7,26 @@ from lbry.extras.daemon.componentmanager import ComponentManager
 from lbry.wallet.orchstr8.node import LBCWalletNode, WalletNode
 from lbry.extras.daemon.components import (
     DHT_COMPONENT,
-    HASH_ANNOUNCER_COMPONENT, PEER_PROTOCOL_SERVER_COMPONENT,
-    UPNP_COMPONENT, EXCHANGE_RATE_MANAGER_COMPONENT, LIBTORRENT_COMPONENT
+    HASH_ANNOUNCER_COMPONENT,
+    PEER_PROTOCOL_SERVER_COMPONENT,
+    UPNP_COMPONENT,
+    EXCHANGE_RATE_MANAGER_COMPONENT,
+    LIBTORRENT_COMPONENT,
 )
 from lbry.extras.daemon.exchange_rate_manager import (
-    ExchangeRateManager, ExchangeRate, BittrexBTCFeed, BittrexUSDFeed
+    ExchangeRateManager,
+    ExchangeRate,
+    BittrexBTCFeed,
+    BittrexUSDFeed,
 )
 from lbry.conf import Config
 
 from papr.daemon import PaprDaemon
 
+
 class PaprDaemonTestCase(CommandTestCase):
     pass
-    '''
+    """
     async def add_daemon(self, wallet_node=None, seed=None):
         start_wallet_node = False
         if wallet_node is None:
@@ -82,4 +89,4 @@ class PaprDaemonTestCase(CommandTestCase):
         self.daemons.append(daemon)
         wallet_node.manager.old_db = daemon.storage
         return daemon
-    '''
+    """

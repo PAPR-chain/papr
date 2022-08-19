@@ -2,8 +2,10 @@ import json
 
 from papr.settings import Config
 
+
 def load_manuscript(name):
     pass
+
 
 def load_config(path):
     try:

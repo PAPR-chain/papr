@@ -1,4 +1,3 @@
-
 class Server:
     def __init__(self, name, daemon, channel):
         self.name = name
