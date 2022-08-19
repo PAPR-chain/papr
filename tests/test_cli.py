@@ -5,7 +5,6 @@ import logging
 from zipfile import ZipFile
 from click.testing import CliRunner
 from functools import partial
-from syncer import sync
 
 from lbry.testcase import CommandTestCase
 from lbry.schema.claim import Channel

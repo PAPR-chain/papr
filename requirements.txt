@@ -1,2 +1,6 @@
 appdirs
 click
+cryptography>=35.0.0
+requests
+git+https://github.com/lbryio/lbry-sdk
+git+https://github.com/lbryio/hub
