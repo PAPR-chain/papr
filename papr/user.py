@@ -15,6 +15,7 @@ class User:
         self.identifier = (
             identifier  # Name of the user profile, used when storing userdata to disk
         )
+
         if identifier:
             self.userdata_load()
 
@@ -23,6 +24,9 @@ class User:
             self.network = network
         else:
             self.network = Network(daemon)
+
+        self.publications = {}
+        self.reviews = {}
 
     def userdata_load(self):
         d = os.path.join(USERDATA_DIR, self.identifier)
@@ -66,3 +70,6 @@ class User:
         if not self.channel:
             raise UninitializedException(f"User has no channel")
         return self.channel.public_key_bytes
+
+    def __str__(self):
+        return self.identifier

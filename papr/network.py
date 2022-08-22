@@ -19,3 +19,12 @@ class Network:
         logger.warning(f"Found claim(s) with name {name}")
 
         return False
+
+    async def get_public_key(self, channel_name):
+        hits = await self.daemon.jsonrpc_resolve(channel_name)
+
+        if not isinstance(hits[channel_name], Output):
+            logger.info(f"Found no claim with name {channel_name}")
+            return
+
+        return hits[channel_name].claim.channel.public_key

@@ -8,9 +8,10 @@ from lbry.crypto.hash import sha256, double_sha256
 from lbry.crypto.crypt import better_aes_decrypt
 
 from papr.manuscript import Manuscript
-from papr.review import sign_review
-from papr.server.publish import FormalReview
-from papr.server.coordination_server import Server
+from papr.network import Network
+from papr.review import Review
+from papr.server.reviewround import ReviewRound
+from papr.server.server import Server
 from papr.server.reviewers import verify_identity
 from papr.settings import Config
 from papr.utilities import generate_rsa_keys, rsa_decrypt_text, read_all_bytes
@@ -32,9 +33,10 @@ class ServerTestCase(CommandTestCase):
         chan = await self.channel_create(name="@Server", bid="0.001")
         sub_chan = await self.channel_create(name="@CorrespondingAuthor", bid="0.001")
 
-        server = Server("Test PAPR server", self.daemon, chan["outputs"][0])
+        network = Network(self.daemon)
+        server = Server("Test PAPR server", "@Server", network)
 
-        rev = FormalReview(self.config, server)
+        rev = ReviewRound(self.config, server, "perfect, just cite me a lot more")
 
         reviews = [
             "pretty groundbreaking stuff, 2/10",
@@ -44,11 +46,13 @@ class ServerTestCase(CommandTestCase):
             "testpassword"
         )  # Hypothetical author RSA keys
 
-        tx = await rev.publish_review(
+        rev.author_pub_key = pubkey
+
+        rev.set_reviews(reviews)
+
+        tx = await rev.publish(
             sub_name="tremblay-test-manuscript",
             sub_channel_id=sub_chan["outputs"][0]["claim_id"],
-            author_pubkey=pubkey,
-            reviews=reviews,
         )
 
         await self.generate(5)
@@ -94,12 +98,10 @@ class ServerTestCase(CommandTestCase):
         reviewer = await rev_daemon.jsonrpc_channel_create(
             name="@Reviewer2", bid="0.001"
         )
-        review = "Everything about this work is bad"
 
-        await self.generate(100)
+        await self.generate(10)
 
-        signed_review = await sign_review(
-            "submission-name", "123456", review, rev_daemon, "@Reviewer2"
-        )
+        review = Review("submission-name", rev_daemon, "@Reviewer2")
+        await review.generate("Everything about this work is bad")
 
-        assert verify_identity(self.daemon, signed_review, "@Reviewer2")
+        assert verify_identity(self.daemon, review.review, "@Reviewer2")

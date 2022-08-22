@@ -2,18 +2,30 @@ import logging
 import asyncio
 import zipfile
 import os
+import time
 
 from lbry.crypto.crypt import better_aes_encrypt, better_aes_decrypt
 
 from papr.settings import CHUNK_SIZE
 from papr.utilities import generate_human_readable_passphrase, generate_rsa_keys
+from papr.localdata import PaprObject
 
 logger = logging.getLogger(__name__)
 
 
-class Manuscript:
-    ### Load from file
-    def __init__(self, config, network, review_passphrase, **args):
+class Manuscript(PaprObject):
+
+    SAVED_FIELDS = ["encryption_passphrase", "review_passphrase", "action_log"]
+    LOADED_FIELDS = ["network", "config"]
+
+    def __init__(
+        self,
+        config,
+        network,
+        review_passphrase,
+        encryption_passphrase=None,
+        action_log=[],
+    ):
         self.config = config
         self.network = network
 
@@ -22,9 +34,9 @@ class Manuscript:
         self.review_passphrase = review_passphrase
 
         # Passphrase to encrypt the original publication ("private" submission). Optional (no encryption = "preprint" submission)
-        self.encryption_passphrase = None
+        self.encryption_passphrase = encryption_passphrase
 
-        self.status = 0
+        self.action_log = action_log
 
     async def _publish(
         self,
@@ -86,17 +98,42 @@ class Manuscript:
             z.writestr(f"{claim_name}_key.pub", self.public_key)  # just name?
 
         # Thumbnail
-        tx = await user.daemon.jsonrpc_stream_create(
-            claim_name,
-            bid,
-            file_path=zip_path,
-            title=title,
-            author=author,
-            description=abstract,
-            tags=tags,
-            channel_id=user.channel_id,
-            channel_name=user.channel_name,
-        )
+        try:
+            tx = await user.daemon.jsonrpc_stream_create(
+                claim_name,
+                bid,
+                file_path=zip_path,
+                title=title,
+                author=author,
+                description=abstract,
+                tags=tags,
+                channel_id=user.channel_id,
+                channel_name=user.channel_name,
+            )
+        except Exception as e:
+            logger.error(f"Could not submit the document: {str(e)}")
+            raise
+
+        sub_data = {
+            "claim_name": claim_name,
+            "bid": bid,
+            "file_path": file_path,
+            "title": title,
+            "abstract": abstract,
+            "author": author,
+            "tags": tags,
+            "user": user.identifier,
+            "revision": revision,
+            "encrypt": encrypt,
+            "official": official,
+            "ignore_duplicate_names": ignore_duplicate_names,
+            "time": "{:.0f}".format(time.time()),
+            "txid": tx.id,
+            "txhash": tx.hash,
+        }
+
+        self.action_log.append(sub_data)
+
         return tx
 
     async def create_submission(
@@ -125,10 +162,8 @@ class Manuscript:
         ) as out:
             out.write(self.public_key)
 
-        self.status = 1  # ?
-
         claim_name = f"{name}_preprint"
-        return await self._publish(
+        tx = await self._publish(
             claim_name,
             bid,
             file_path,
@@ -172,9 +207,19 @@ class Manuscript:
         )
 
     async def submit_official_version(
-        self, name, bid, file_path, title, abstract, author, tags, user, **kwargs
+        self,
+        name,
+        bid,
+        file_path,
+        title,
+        abstract,
+        author,
+        tags,
+        user,
+        revision,
+        **kwargs,
     ):
-        claim_name = f"{name}_v1"
+        claim_name = f"{name}_v{revision}"
         return await self._publish(
             claim_name,
             bid,
@@ -184,6 +229,7 @@ class Manuscript:
             author,
             tags,
             user,
+            revision,
             encrypt=False,
             official=True,
             **kwargs,

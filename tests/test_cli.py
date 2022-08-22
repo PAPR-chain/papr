@@ -12,9 +12,6 @@ from lbry.schema.claim import Channel
 
 from papr.user import User
 from papr.testcase import PaprDaemonTestCase
-from papr.manuscript import Manuscript
-from papr.review import sign_review
-from papr.server.publish import FormalReview
 from papr.server.coordination_server import Server
 from papr.server.reviewers import verify_identity
 from papr.settings import Config
