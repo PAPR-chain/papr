@@ -6,7 +6,7 @@ import time
 
 from lbry.crypto.crypt import better_aes_encrypt, better_aes_decrypt
 
-from papr.settings import CHUNK_SIZE
+from papr.config import CHUNK_SIZE
 from papr.utilities import generate_human_readable_passphrase, generate_rsa_keys
 from papr.localdata import PaprObject
 

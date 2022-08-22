@@ -13,7 +13,7 @@ from papr.review import Review
 from papr.server.reviewround import ReviewRound
 from papr.server.server import Server
 from papr.server.reviewers import verify_identity
-from papr.settings import Config
+from papr.config import Config
 from papr.utilities import generate_rsa_keys, rsa_decrypt_text, read_all_bytes
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))

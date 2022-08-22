@@ -14,7 +14,7 @@ from papr.user import User
 from papr.testcase import PaprDaemonTestCase
 from papr.server.coordination_server import Server
 from papr.server.reviewers import verify_identity
-from papr.settings import Config
+from papr.config import Config
 from papr.utilities import generate_rsa_keys, rsa_decrypt_text, read_all_bytes
 from papr.daemon import run_daemon
 from papr import cli

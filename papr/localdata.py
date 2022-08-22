@@ -1,6 +1,6 @@
 import json
 
-from papr.settings import Config
+from papr.config import Config
 
 
 class PaprObject:

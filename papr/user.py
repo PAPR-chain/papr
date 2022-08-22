@@ -4,7 +4,7 @@ import json
 
 from papr.exceptions import UninitializedException
 from papr.network import Network
-from papr.settings import USERDATA_DIR
+from papr.config import USERDATA_DIR
 
 logger = logging.getLogger(__name__)
 

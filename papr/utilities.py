@@ -15,7 +15,7 @@ from coincurve import PrivateKey, PublicKey
 from lbry.crypto.crypt import scrypt
 
 from papr.constants import WORDS
-from papr.settings import ENCRYPTION_NUM_WORDS, CHUNK_SIZE
+from papr.config import ENCRYPTION_NUM_WORDS, CHUNK_SIZE
 
 logger = logging.getLogger(__name__)
 

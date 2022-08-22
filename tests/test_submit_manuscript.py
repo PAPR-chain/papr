@@ -10,7 +10,7 @@ from lbry.crypto.crypt import better_aes_decrypt
 
 from papr.manuscript import Manuscript
 from papr.utilities import file_sha256
-from papr.settings import Config
+from papr.config import Config
 from papr.user import User
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))

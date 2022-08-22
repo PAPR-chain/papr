@@ -5,11 +5,15 @@ import asyncio
 import signal
 from aiohttp.web import GracefulExit
 import logging
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 from lbry.extras.daemon.daemon import Daemon, JSONRPCServerType
 from lbry.extras.cli import ensure_directory_exists
-from lbry.conf import Config, Setting, NOT_SET
 from lbry.extras.daemon.componentmanager import ComponentManager
+
+from papr.models import Base, User
+from papr.config import Config, IS_TEST
 
 
 class PAPRJSONRPCServerType(JSONRPCServerType):
@@ -43,6 +47,27 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
 
         self.users = {}
 
+        if IS_TEST:
+            self.engine = create_engine(
+                "sqlite+pysqlite:///:memory:", echo=True, future=True
+            )
+        else:
+            self.engine = create_engine(
+                f"sqlite+pysqlite:///{conf.database_dir}/papr.sqlite",
+                echo=True,
+                future=True,
+            )
+
+        self.conn = self.engine.connect()
+
+        Base.metadata.create_all(self.conn)
+
+    async def stop(self):
+        print("PAPR daemon closing")
+        await super().stop()
+        self.conn.close()
+        self.engine.dispose()
+
     async def papr_channel_create(self, name, bid):
         pass
 
@@ -72,17 +97,25 @@ def run_daemon(daemon):
 
 
 def run_from_args(args):
-    conf = Config.create_from_arguments(args)
-    for directory in (conf.data_dir, conf.download_dir, conf.wallet_dir):
+    conf = Config(**args)
+
+    for directory in (
+        conf.data_dir,
+        conf.download_dir,
+        conf.wallet_dir,
+        conf.submission_dir,
+        conf.review_dir,
+        conf.database_dir,
+    ):
         ensure_directory_exists(directory)
 
     pd = PaprDaemon(conf)
     run_daemon(pd)
-    print("PAPR daemon closing")
 
 
 if __name__ == "__main__":
     if os.path.isfile("papr.json"):
         with open("papr.json") as f:
             args = json.load(f)
+
     run_from_args(args)
