@@ -5,7 +5,7 @@ import logging
 import appdirs
 
 from lbry.conf import Config as LbryConfig
-from lbry.conf import Path
+from lbry.conf import Path, String
 
 IS_TEST = "unittest" in sys.modules
 
@@ -31,3 +31,5 @@ class Config(LbryConfig):
         "Directory containing the database storing cached and private information",
         metavar="DIR",
     )
+
+    active_channel = String("Channel to use for all publishing and reviewing actions")

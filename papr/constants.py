@@ -1,7 +1,5 @@
 import binascii
 
-REVIEW_APPENDIX_TXT = "\n*** SIGNATURE ***\n"
-
 # Way too small, but whatever for now
 WORDS = [
     "organic",

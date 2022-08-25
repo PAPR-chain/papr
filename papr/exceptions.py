@@ -1,2 +1,2 @@
-class UninitializedException(Exception):
+class PaprException(Exception):
     pass
