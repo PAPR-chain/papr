@@ -8,6 +8,7 @@ import datetime
 import binascii
 import zipfile
 import base64
+import json
 from aiohttp.web import GracefulExit
 
 from sqlalchemy import create_engine, select, func
@@ -349,6 +350,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                     f"{claim_name}_key.pub", article.public_key
                 )  # just name? useful?
                 """
+                # Add reference to reviewing server
 
             # Thumbnail
             try:
@@ -532,12 +534,108 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             article.reviewed = True
             article.revision = 1
 
-            # send message server
+            payload = {
+                "base_claim_name": article.base_claim_name,
+                "channel_name": article.channel_name,
+                "review_passphrase": article.review_passphrase,
+                "revision": article.revision,
+                "title": article.title,
+                "abstract": article.abstract,
+                "authors": article.authors,
+                "tags": article.tags,
+            }
+
+            if article.encryption_passphrase:
+                payload["encryption_passphrase"] = article.encryption_passphrase
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"{url}/accept", json=payload) as resp:
+                    status_code = resp.status
+                    msg = await resp.text()
+
+            if status_code != 200:
+                session.rollback()
+                return logger.error(
+                    f"Error while sending acceptance of {base_claim_name} to the server.\n Status code: {status_code}\nReason: {msg}"
+                )
 
             session.add(article)
             session.commit()
 
-        return
+        return logger.info(
+            f"Sent review acceptance of article {article.base_claim_name} to the server"
+        )
+
+    async def _get_article_review_server(self, claim_name):
+        res = await self.jsonrpc_get(claim_name)
+
+        if "error" in res:
+            return logger.error(f"Could not resolve {claim_name}")
+
+        path = res["results"]["download_path"]
+
+        with ZipFile(path) as z:
+            zipped_files = z.namelist()
+            if "server.json" not in zipped_files:
+                return logger.error(
+                    f"Manuscript {claim_name} does not contain a reference to its review server"
+                )
+
+            try:
+                server_data = json.reads(z.read("server.json"))
+            except json.JSONDecodeError:
+                return logger.error(
+                    f"Could not decode JSON from manuscript {claim_name}"
+                )
+
+        return server_data
+
+    async def papr_reviewer_recommend(
+        self, claim_name, reviewer_name, reviewer_channel="", reviewer_email=""
+    ):
+        if not email and not reviewer_channel:
+            return logger.error(
+                f"Cannot submit reviewer recommendation: no contact information provided. A channel or an email is required."
+            )
+
+        if not self.channel_name:
+            return logger.error(
+                f"Cannot submit reviewer recommendation: no channel loaded. Recommendations cannot be anonymous"
+            )
+
+        server_data = await self._get_article_review_server(claim_name)
+        if "error" in server_data:
+            return server_data
+
+        # Check status?
+        # Add reason text possibly
+        # Add recommendation degree
+
+        payload = {
+            "claim_name": claim_name,
+            "reviewer_name": reviewer_name,
+            "recommender_channel": self.channel_name,
+        }
+
+        if reviewer_channel:
+            payload["reviewer_channel"] = reviewer_channel
+
+        if email:
+            payload["reviewer_email"] = reviewer_email
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{server_data['url']}/recommend", json=payload
+            ) as resp:
+                status_code = resp.status
+                msg = await resp.text()
+
+        if status_code != 200:
+            return logger.error(
+                f"Error while sending reviewer recommendation for {base_claim_name} to the server.\n Status code: {status_code}\nReason: {msg}"
+            )
+
+        return logger.info(f"Reviewer recommendation sent to the server, thank you!")
 
 
 def run_daemon(daemon):

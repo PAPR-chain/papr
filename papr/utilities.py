@@ -26,12 +26,15 @@ class DualLogger:
 
     def debug(self, msg):
         self.logger.debug(msg)
+        return {"debug": msg}
 
     def info(self, msg):
         self.logger.info(msg)
+        return {"info": msg}
 
     def warning(self, msg):
         self.logger.warning(msg)
+        return {"warning": msg}
 
     def error(self, msg):
         self.logger.error(msg)
