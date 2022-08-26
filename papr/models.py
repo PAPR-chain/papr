@@ -1,5 +1,15 @@
 from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy import Table, Column, Integer, String, DateTime, Float, Text, ForeignKey
+from sqlalchemy import (
+    Table,
+    Column,
+    Integer,
+    String,
+    DateTime,
+    Float,
+    Text,
+    ForeignKey,
+    Boolean,
+)
 
 Base = declarative_base()
 
@@ -21,8 +31,11 @@ class Article(Base):
     encryption_passphrase = Column(String(1024))
     review_passphrase = Column(String(1024))
 
-    public_key = Column(String(KEY_LENGTH))
-    private_key = Column(String(KEY_LENGTH))
+    reviewed = Column(Boolean())
+    revision = Column(Integer())
+
+    review_server_id = Column(Integer, ForeignKey("servers.id"))
+    review_server = relationship("Server")
 
     @property
     def title(self):
@@ -102,3 +115,4 @@ class Server(Base):
     submitted_reviews = relationship("Review", back_populates="server")
 
     public_key = Column(String(KEY_LENGTH))
+    reviewed_articles = relationship("Article", back_populates="review_server")

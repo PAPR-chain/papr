@@ -8,7 +8,6 @@ from lbry.testcase import IntegrationTestCase, CommandTestCase
 from lbry.crypto.hash import sha256
 from lbry.crypto.crypt import better_aes_decrypt
 
-from papr.manuscript import Manuscript
 from papr.utilities import file_sha256
 from papr.config import Config
 from papr.testcase import PaprDaemonTestCase
@@ -16,24 +15,26 @@ from papr.testcase import PaprDaemonTestCase
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-class DaemonTestCase(PaprDaemonTestCase):
+class ManuscriptTests(PaprDaemonTestCase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
     def run(self, result=None):
         with tempfile.TemporaryDirectory() as tmpdir:
             self.config = Config(submission_dir=tmpdir)
-            super(DaemonTestCase, self).run(result)
+            super().run(result)
 
-    async def test_create_unencrypted_manuscript(self):
-        tx = self.daemon.jsonrpc_channel_create(name="@Steve", bid="0.001")
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+
+        tx = await self.daemon.jsonrpc_channel_create(name="@Steve", bid="0.001")
 
         await self.generate(1)
-        await tx
-        await self.generate(1)
+        await self.ledger.wait(tx, self.blockchain.block_expected)
 
         await self.daemon.channel_load("@Steve")
 
+    async def test_create_unencrypted_manuscript(self):
         file_path = os.path.join(TESTS_DIR, "data", "document1.pdf")
         hash_i = file_sha256(file_path)
 
@@ -48,7 +49,8 @@ class DaemonTestCase(PaprDaemonTestCase):
             encrypt=False,
         )
 
-        await self.generate(5)
+        await self.generate(1)
+        await self.ledger.wait(ret["tx"], self.blockchain.block_expected)
 
         ll = await self.daemon.jsonrpc_stream_list()
         assert len(ll["items"]) == 1
@@ -70,23 +72,15 @@ class DaemonTestCase(PaprDaemonTestCase):
         with ZipFile(os.path.join(self.daemon.conf.data_dir, "test_preprint.zip")) as z:
             zipped_files = z.namelist()
 
-            assert len(zipped_files) == 2
+            assert len(zipped_files) == 1
             assert "Manuscript_test_preprint.pdf" in zipped_files
-            assert "test_preprint_key.pub" in zipped_files
+            # assert "test_preprint_key.pub" in zipped_files
 
             pdf = z.read("Manuscript_test_preprint.pdf")
             hash_f = sha256(pdf)
             assert hash_f == hash_i
 
     async def test_create_encrypted_manuscript(self):
-        tx = self.daemon.jsonrpc_channel_create(name="@Steve", bid="0.001")
-
-        await self.generate(1)
-        await tx
-        await self.generate(1)
-
-        await self.daemon.channel_load("@Steve")
-
         file_path = os.path.join(TESTS_DIR, "data", "document1.pdf")
         hash_i = file_sha256(file_path)
 
@@ -101,7 +95,8 @@ class DaemonTestCase(PaprDaemonTestCase):
             encrypt=True,
         )
 
-        await self.generate(5)
+        await self.generate(1)
+        await self.ledger.wait(ret["tx"], self.blockchain.block_expected)
 
         ll = await self.daemon.jsonrpc_stream_list()
         assert len(ll["items"]) == 1
@@ -129,9 +124,9 @@ class DaemonTestCase(PaprDaemonTestCase):
         with ZipFile(os.path.join(self.daemon.conf.data_dir, "test_preprint.zip")) as z:
             zipped_files = z.namelist()
 
-            assert len(zipped_files) == 2
+            assert len(zipped_files) == 1
             assert "Manuscript_test_preprint.pdf" in zipped_files
-            assert "test_preprint_key.pub" in zipped_files
+            # assert "test_preprint_key.pub" in zipped_files
 
             data_enc = z.read("Manuscript_test_preprint.pdf")
             hash_enc = sha256(data_enc)
@@ -142,14 +137,6 @@ class DaemonTestCase(PaprDaemonTestCase):
             assert hash_dec == hash_i
 
     async def test_create_duplicate_manuscript(self):
-        tx = self.daemon.jsonrpc_channel_create(name="@Steve", bid="0.001")
-
-        await self.generate(1)
-        await tx
-        await self.generate(1)
-
-        await self.daemon.channel_load("@Steve")
-
         file_path = os.path.join(TESTS_DIR, "data", "document1.pdf")
 
         ret = await self.daemon.papr_article_create(
@@ -163,7 +150,8 @@ class DaemonTestCase(PaprDaemonTestCase):
             encrypt=True,
         )
 
-        await self.generate(5)
+        await self.generate(1)
+        await self.ledger.wait(ret["tx"], self.blockchain.block_expected)
 
         ll = await self.daemon.jsonrpc_stream_list()
         assert len(ll["items"]) == 1
@@ -188,3 +176,66 @@ class DaemonTestCase(PaprDaemonTestCase):
 
         res = await self.daemon.jsonrpc_resolve("test_preprint")
         assert res["test_preprint"].claim.stream.title == "My title"
+
+    async def test_create_revision(self):
+        file_path = os.path.join(TESTS_DIR, "data", "document1.pdf")
+
+        ret = await self.daemon.papr_article_create(
+            base_claim_name="test",
+            bid="0.001",
+            file_path=file_path,
+            title="My title",
+            abstract="we did great stuff",
+            authors="Steve Tremblay and Bob Roberts",
+            tags=["test"],
+            encrypt=False,
+        )
+
+        await self.generate(1)
+        await self.ledger.wait(ret["tx"], self.blockchain.block_expected)
+
+        ll = await self.daemon.jsonrpc_stream_list()
+        assert len(ll["items"]) == 1
+
+        file_path2 = os.path.join(TESTS_DIR, "data", "document2.pdf")
+        hash_i = file_sha256(file_path2)
+
+        ret = await self.daemon.papr_article_revise(
+            base_claim_name="test",
+            bid="0.001",
+            file_path=file_path2,
+            title="My title",
+            abstract="we did great stuff",
+            authors="Steve Tremblay and Bob Roberts",
+            tags=["test"],
+            encrypt=False,
+        )
+
+        await self.generate(1)
+        await self.ledger.wait(ret["tx"], self.blockchain.block_expected)
+
+        ll = await self.daemon.jsonrpc_stream_list()
+        assert len(ll["items"]) == 2
+        pub = ll["items"][0]
+
+        res = await self.daemon.jsonrpc_resolve("test_r1")
+        assert "test_r1" in res
+        assert not isinstance(res["test_r1"], dict)
+        assert res["test_r1"].permanent_url == pub.permanent_url
+
+        await self.daemon.jsonrpc_file_save(
+            "test_r1.zip", self.daemon.conf.data_dir, claim_name="test_r1"
+        )
+
+        assert os.path.isfile(os.path.join(self.daemon.conf.data_dir, "test_r1.zip"))
+
+        with ZipFile(os.path.join(self.daemon.conf.data_dir, "test_r1.zip")) as z:
+            zipped_files = z.namelist()
+
+            assert len(zipped_files) == 1
+            assert "Manuscript_test_r1.pdf" in zipped_files
+            # assert "test_preprint_key.pub" in zipped_files
+
+            pdf = z.read("Manuscript_test_r1.pdf")
+            hash_f = sha256(pdf)
+            assert hash_f == hash_i

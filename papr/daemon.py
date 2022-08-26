@@ -22,9 +22,13 @@ from lbry.crypto.crypt import better_aes_encrypt, better_aes_decrypt
 from papr.models import Base, Article, Manuscript, Server, Review
 from papr.config import Config, IS_TEST, CHUNK_SIZE
 from papr.exceptions import PaprException
-from papr.utilities import generate_rsa_keys, generate_human_readable_passphrase
+from papr.utilities import (
+    generate_rsa_keys,
+    generate_human_readable_passphrase,
+    DualLogger,
+)
 
-logger = logging.getLogger(__name__)
+logger = DualLogger(logging.getLogger(__name__))
 
 
 class PAPRJSONRPCServerType(JSONRPCServerType):
@@ -68,6 +72,9 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             )
 
         self.conn = self.engine.connect()
+        self.channel_id = None
+        self.channel_name = None
+        self.channel = None
 
         Base.metadata.create_all(self.conn)
 
@@ -78,7 +85,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             try:
                 await self.channel_load(conf.active_channel)
             except PaprException:
-                logger.error(
+                logger.warning(
                     f"Could not load channel {conf.active_channel}, some features will not be available"
                 )
             else:
@@ -121,17 +128,43 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
 
         return hits[channel_name].claim.channel.public_key
 
+    async def papr_server_add(self, url):
+        # clean and certify url
+
+        if self.channel_name is None:
+            return logger.error(f"Cannot register to the server, no channel is loaded")
+
+        payload = {
+            "channel_name": self.channel_name,
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{url}/register", json=payload) as resp:
+                status_code = resp.status
+                data = await resp.json()
+
+        if status_code == 201:
+            with Session(self.engine) as session:
+                server = Server(**data)
+                session.add(server)
+                session.commit()
+                logger.info(
+                    f"Added server {server.name} ({server.channel_name}) to the list of known servers!"
+                )
+        else:
+            return logger.error(
+                f"Could not register to {url}, received status code {status_code}"
+            )
+
+        return data
+
     async def papr_review_create(self, submission_claim_name, review_text=""):
         sub_claim = await self.jsonrpc_get(submission_claim_name)
 
         if "error" in sub_claim:
-            logger.error(
+            return logger.error(
                 f"Failed to resolve submission {submission_claim_name}: {sub_claim['error']}"
             )
-            return
-
-        # if not "result" in sub_resolve:  ##
-        #    pass
 
         submission = sub_resolve["result"][submission_claim_name]
 
@@ -151,10 +184,9 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             submission_title = submission["value"]["title"]
 
         if "signing_channel" not in submission:
-            logger.error(
+            return logger.error(
                 f"The submission {submission_claim_name} is not associated with any channel"
             )
-            return
 
         submission_channel_name = submission["signing_channel"]["name"]
 
@@ -227,7 +259,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                     )
                 else:
                     text = await resp.text()
-                    logger.error(
+                    return logger.error(
                         f"Error while submitting the review of {reviewed_submission_claim_name} to {server_channel_name}\nStatus code: {status_code}\nReason: {text['reason']}"
                     )
 
@@ -238,27 +270,19 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
         file_path,
         title,
         abstract,
-        author,
+        authors,
         tags,
+        server=None,
         revision=0,
         encrypt=True,
-        reviewed=False,
         ignore_duplicate_names=False,
     ):
 
         if not os.path.isfile(file_path):
-            logger.error(
+            return logger.error(
                 f"Cannot create a new manuscript: file {file_path} does not exist"
             )
-            return  # return error?
-
-        if reviewed:
-            claim_name = f"{base_claim_name}_v{revision}"
-        else:
-            if revision == 0:
-                claim_name = f"{base_claim_name}_preprint"
-            else:
-                claim_name = f"{base_claim_name}_r{revision}"
+            return
 
         raw_file = b""
         with open(file_path, "rb") as raw:
@@ -269,15 +293,30 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                     break
                 raw_file += chunk
 
-        if reviewed and encrypt:
-            raise Exception(
-                "Invalid combination of parameters: cannot encrypt a reviewed version"
-            )
-
         with Session(self.engine) as session:
             article = session.execute(
                 select(Article).filter_by(base_claim_name=base_claim_name)
             ).scalar_one()
+
+            if article.reviewed and encrypt:
+                raise Exception(
+                    "Invalid combination of parameters: cannot encrypt a reviewed version"
+                )
+
+            article.revision = revision
+
+            if article.reviewed:
+                claim_name = f"{base_claim_name}_v{revision}"
+            else:
+                if revision == 0:
+                    claim_name = f"{base_claim_name}_preprint"
+                else:
+                    claim_name = f"{base_claim_name}_r{revision}"
+
+                if server is None and not IS_TEST:
+                    raise PaprException(
+                        f"No server given for publishing the unreviewed manuscript {claim_name}"
+                    )
 
             if encrypt:
                 processed_file = better_aes_encrypt(
@@ -289,42 +328,48 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             zip_path = os.path.join(self.conf.submission_dir, claim_name + ".zip")
 
             if os.path.isfile(zip_path):
-                logger.error(f"You have already submitted a manuscript with this name!")
-                return None
+                return logger.error(
+                    f"You have already submitted a manuscript with this name!"
+                )
 
             if not ignore_duplicate_names:
                 is_free = await self.verify_claim_free(claim_name)
 
                 if not is_free:
-                    logger.error(
+                    return logger.error(
                         f"Cannot submit manuscript: another claim with this name exists"
                     )
-                    return None
 
             with zipfile.ZipFile(zip_path, "w") as z:
                 z.writestr(
                     f"Manuscript_{claim_name}.pdf", processed_file
                 )  # pdf hardcoded
-                z.writestr(f"{claim_name}_key.pub", article.public_key)  # just name?
+                """
+                z.writestr(
+                    f"{claim_name}_key.pub", article.public_key
+                )  # just name? useful?
+                """
 
             # Thumbnail
             try:
-                tx = await self.jsonrpc_stream_create(
+                tx = await self.jsonrpc_stream_create(  # explicit review server request
                     claim_name,
                     bid,
                     file_path=zip_path,
                     title=title,
-                    author=author,
+                    author=authors,
                     description=abstract,
                     tags=tags,
                     channel_id=self.channel_id,
                     channel_name=self.channel_name,
                 )
             except Exception as e:
-                logger.error(f"Could not submit the document: {str(e)}")
                 session.rollback()
-                raise
+                return logger.error(f"Could not submit the document: {str(e)}")
 
+            logger.info(f"Manuscript published as {claim_name}!")
+
+            ## alert review server, give review/encryption passphrase
             _tags = ";".join(tags)
             man = Manuscript(
                 claim_name=claim_name,
@@ -333,19 +378,18 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                 submission_date=datetime.datetime.utcnow(),
                 title=title,
                 abstract=abstract,
-                authors=author,
+                authors=authors,
                 tags=_tags,
                 article=article,
                 txid=tx.id,
                 txhash=tx.hash,
             )
             session.add(man)
-
-            logger.info(f"Manuscript published as {claim_name}!")
+            session.add(article)
 
             session.commit()
 
-        # return tx
+        return tx
 
     async def papr_article_create(
         self,
@@ -356,8 +400,11 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
         abstract,
         authors,
         tags,
+        server_name="",
         encrypt=False,
     ):
+
+        # serverless?
 
         ret = {}
         with Session(self.engine) as session:
@@ -366,21 +413,37 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                     select(Article).filter_by(base_claim_name=base_claim_name)
                 )
             ).scalar_one()
+
             if existing_articles > 0:
-                logger.error(
+                return logger.error(
                     f"Cannot create a new article with claim name {base_claim_name}: such an article already exists"
                 )
                 if existing_articles > 1:
-                    logger.error(
+                    return logger.error(
                         f"Found {existing_articles} existing articles in the database with claim name {base_claim_name}"
                     )
-                return (
-                    {}
-                )  # TODO: add wrapper function to handle logging + return values
+
+            if server_name:
+                server = session.execute(
+                    select(Server).filter_by(name=server_name)
+                ).scalar_one_or_none
+
+                if not server:
+                    return logger.error(
+                        f"The review server {server_name} is not known. First register to the server."
+                    )
+            else:
+                server = None
 
             article = Article(
-                base_claim_name=base_claim_name, channel_name=self.channel_name
+                base_claim_name=base_claim_name,
+                channel_name=self.channel_name,
+                reviewed=False,
+                revision=0,
             )
+
+            if server:
+                article.server = server
 
             article.review_passphrase = generate_human_readable_passphrase()
             ret["review_passphrase"] = article.review_passphrase
@@ -389,14 +452,10 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                 article.encryption_passphrase = generate_human_readable_passphrase()
                 ret["encryption_passphrase"] = article.encryption_passphrase
 
-            private_key, public_key = generate_rsa_keys(article.review_passphrase)
-            article.public_key = public_key
-            article.private_key = private_key
-
             session.add(article)
             session.commit()
 
-        await self._publish_manuscript(
+        tx = await self._publish_manuscript(
             base_claim_name,
             bid,
             file_path,
@@ -404,11 +463,81 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             abstract,
             authors,
             tags,
+            server=server,
             revision=0,
             encrypt=encrypt,
         )
 
-        return ret
+        if isinstance(tx, dict):
+            # Delete article
+            return tx
+        else:
+            ret["tx"] = tx
+            return ret
+
+    async def papr_article_revise(
+        self,
+        base_claim_name,
+        bid,
+        file_path,
+        title,
+        abstract,
+        authors,
+        tags,
+        encrypt=False,
+    ):
+        with Session(self.engine) as session:
+            article = session.execute(
+                select(Article).filter_by(base_claim_name=base_claim_name)
+            ).scalar_one_or_none()
+
+            if article is None:
+                return logger.error(
+                    f"Cannot revise the article with claim name {base_claim_name}: such an article does not exists"
+                )
+
+            rev = article.revision + 1
+
+        tx = await self._publish_manuscript(
+            base_claim_name,
+            bid,
+            file_path,
+            title=title,
+            abstract=abstract,
+            authors=authors,
+            tags=tags,
+            revision=rev,
+            encrypt=encrypt,
+        )
+
+        if isinstance(tx, dict):
+            return tx
+        else:
+            return {"tx": tx}
+
+    async def papr_article_accept(
+        self,
+        base_claim_name,
+    ):
+        with Session(self.engine) as session:
+            article = session.execute(
+                select(Article).filter_by(base_claim_name=base_claim_name)
+            ).scalar_one_or_none()
+
+            if article is None:
+                return logger.error(
+                    f"Cannot revise the article with claim name {base_claim_name}: such an article does not exists"
+                )
+
+            article.reviewed = True
+            article.revision = 1
+
+            # send message server
+
+            session.add(article)
+            session.commit()
+
+        return
 
 
 def run_daemon(daemon):

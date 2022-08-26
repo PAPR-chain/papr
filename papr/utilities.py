@@ -20,6 +20,28 @@ from papr.config import ENCRYPTION_NUM_WORDS, CHUNK_SIZE
 logger = logging.getLogger(__name__)
 
 
+class DualLogger:
+    def __init__(self, logger):
+        self.logger = logger
+
+    def debug(self, msg):
+        self.logger.debug(msg)
+
+    def info(self, msg):
+        self.logger.info(msg)
+
+    def warning(self, msg):
+        self.logger.warning(msg)
+
+    def error(self, msg):
+        self.logger.error(msg)
+        return {"error": msg}
+
+    def critical(self, msg):
+        self.logger.critical(msg)
+        return {"error": msg}
+
+
 def generate_human_readable_passphrase():
     return " ".join(random.choices(WORDS, k=ENCRYPTION_NUM_WORDS))
 
