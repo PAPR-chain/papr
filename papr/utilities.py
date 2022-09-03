@@ -146,11 +146,23 @@ def SECP_encrypt_text(sender_private_key: str, recipient_public_key: str, msg: s
     return encrypted_msg
 
 
+def SECP_decrypt_text_from_hex(
+    recipient_private_key: bytes, sender_public_key: str, encrypted_msg: str
+):
+    priv = PrivateKey.from_hex(recipient_private_key)
+    pub = PublicKey(base64.b64decode(sender_public_key.encode()))
+    return _SECP_decrypt_text(priv, pub, encrypted_msg)
+
+
 def SECP_decrypt_text(
     recipient_private_key: str, sender_public_key: str, encrypted_msg: str
 ):
     priv = PrivateKey.from_pem(base64.b64decode(recipient_private_key.encode()))
     pub = PublicKey(base64.b64decode(sender_public_key.encode()))
+    return _SECP_decrypt_text(priv, pub, encrypted_msg)
+
+
+def _SECP_decrypt_text(priv: PrivateKey, pub: PublicKey, encrypted_msg: str):
     shared_secret = priv.ecdh(pub.format())
 
     msg = aes_decrypt_bytes(shared_secret, encrypted_msg.encode()).decode()

@@ -9,6 +9,9 @@ import binascii
 import zipfile
 import base64
 import json
+import binascii
+
+import aiohttp
 from aiohttp.web import GracefulExit
 
 from sqlalchemy import create_engine, select, func
@@ -18,8 +21,10 @@ from lbry.extras.daemon.daemon import Daemon, JSONRPCServerType
 from lbry.extras.cli import ensure_directory_exists
 from lbry.extras.daemon.componentmanager import ComponentManager
 from lbry.wallet.transaction import Output
+from lbry.wallet.bip32 import PublicKey
 from lbry.crypto.crypt import better_aes_encrypt, better_aes_decrypt
 
+from papr.utilities import SECP_decrypt_text
 from papr.models import Base, Article, Manuscript, Server, Review
 from papr.config import Config, IS_TEST, CHUNK_SIZE
 from papr.exceptions import PaprException
@@ -42,7 +47,7 @@ class PAPRJSONRPCServerType(JSONRPCServerType):
             name = ""
             if methodname.startswith("jsonrpc_"):
                 name = methodname.split("jsonrpc_")[1]
-            elif methodname.startswith("papr_"):
+            elif methodname.startswith("papr_") or methodname.startswith("macro_"):
                 name = methodname
             else:
                 continue
@@ -77,6 +82,8 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
         self.channel_name = None
         self.channel = None
 
+        self.headers = {}
+
         Base.metadata.create_all(self.conn)
 
     async def initialize(self):
@@ -93,7 +100,6 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                 logger.info(f"Channel {conf.active_channel} loaded")
 
     async def stop(self):
-        print("PAPR daemon closing")
         await super().stop()
         self.conn.close()
         self.engine.dispose()
@@ -120,14 +126,18 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
 
         return False
 
-    async def get_public_key(self, channel_name):
+    async def macro_get_public_key(self, channel_name):
+        """
+        Retrieves the (SECP) public key for a given channel and returns it in base64
+        """
         hits = await self.jsonrpc_resolve(channel_name)
 
         if not isinstance(hits[channel_name], Output):
-            logger.info(f"Found no claim with name {channel_name}")
-            return
+            return logger.info(f"Found no claim with name {channel_name}")
 
-        return hits[channel_name].claim.channel.public_key
+        tpub_hex = hits[channel_name].claim.channel.public_key
+        tpub = base64.b64encode(bytes.fromhex(tpub_hex)).decode()
+        return {"public_key": tpub}
 
     async def papr_server_add(self, url):
         # clean and certify url
@@ -140,13 +150,13 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
         }
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{url}/register", json=payload) as resp:
+            async with session.post(f"{url}/api/register/", json=payload) as resp:
                 status_code = resp.status
                 data = await resp.json()
 
         if status_code == 201:
             with Session(self.engine) as session:
-                server = Server(**data)
+                server = Server(url=url, **data)
                 session.add(server)
                 session.commit()
                 logger.info(
@@ -242,7 +252,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             review.signing_ts = datetime.datetime.utcfromtimestamp(signed["signing_ts"])
             session.commit()
 
-            link = f"{server.url}/review"
+            link = f"{server.url}/api/review"
 
         # TODO: encrypt for server?
         payload = {
@@ -251,7 +261,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             "signing_ts": signed["signing_ts"],
         }
 
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession() as session:  # wrapper to handle token
             async with session.post(link, json=payload) as resp:
                 status_code = resp.status
                 if status_code == 201:
@@ -263,6 +273,51 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                     return logger.error(
                         f"Error while submitting the review of {reviewed_submission_claim_name} to {server_channel_name}\nStatus code: {status_code}\nReason: {text['reason']}"
                     )
+
+    async def papr_review_verify(review, channel_name):
+        """
+        Verifies that a review has been signed by the expected channel.
+        Used by: Server
+        """
+
+        # TODO: use channel_id to further verify the claim
+
+        signature = binascii.unhexlify(review["signature"].encode())
+
+        ext_reviewer_chan = await daemon.jsonrpc_resolve(channel_name)
+        res = ext_reviewer_chan[channel_name]
+
+        pubkey = PublicKey.from_compressed(res.claim.channel.public_key_bytes)
+        digest = sha256(
+            review["signing_ts"].encode() + res.claim_hash + review["review"].encode()
+        )
+
+        return pubkey.verify(signature, digest)
+
+    async def papr_reviewround_publish(self, sub_name, sub_channel_id, encrypt=True):
+        """
+        Publishes the reviews on the LBRY blockchain using the identity of the server.
+        The authenticity of the reviews is assumed to have been verified already.
+        The reviews must be in the desired order (reviewer number).
+        Used by: Server
+        """
+
+        title = f"Review 1 of {sub_name} by {sub_channel_id}"
+        description = f"Peer review of the manuscript {sub_name} by {sub_channel_id}. The content is encrypted for objectivity during the peer review process. The decryption key will be published once the manuscript reaches the official publication stage."  # TODO: better
+        tags = ["PAPR", "PAPR-review"]
+        tx = await self.server.daemon.jsonrpc_stream_create(
+            name,
+            "0.0001",
+            file_path=self.enc_review_path,
+            title=title,
+            author=self.server.name,  ###
+            tags=tags,
+            channel_id=self.server.channel["claim_id"],
+            channel_name=self.server.channel["name"],
+            description=description,
+        )
+
+        return tx
 
     async def _publish_manuscript(
         self,
@@ -392,6 +447,111 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             session.commit()
 
         return tx
+
+    async def _get_api_token(self, base_url):
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{base_url}/api/token/{self.channel_name}") as resp:
+                if resp.status != 200:
+                    raise Exception(
+                        f"Could not get token from API server at {base_url}/api/token/{self.channel_name}"
+                    )
+                data = await resp.json()
+
+        chans = (await self.jsonrpc_channel_list())["items"]
+        for c in chans:
+            if c.claim_name == self.channel_name:
+                private_pem = c.private_key.to_pem()
+                break
+        else:
+            return logger.error(
+                f"Could not find channel {self.channel_name} in the channel list, authentication to API server aborted..."
+            )
+
+        # Inflates the private key... could be marginally more efficient
+        private_key = base64.b64encode(private_pem).decode()
+
+        self.token_access = SECP_decrypt_text(
+            private_key, data["pub_key"], data["access"]
+        )
+
+        # The refresh token should be used too
+        self.token_refresh = SECP_decrypt_text(
+            private_key, data["pub_key"], data["refresh"]
+        )
+
+        self.headers = {"HTTP_AUTHORIZATION": f"Bearer {str(self.token_access)}"}
+
+    async def _post_to_url(self, base_url, suburl, payload):
+        if self.headers == {}:
+            error = await self._get_api_token(base_url)
+            if error:
+                return error
+
+        for attempt in range(2):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        f"{base_url}{suburl}",
+                        json=payload,
+                        headers=self.headers,
+                    ) as resp:
+                        msg = await resp.text()
+                        data = await resp.json()
+                        status = resp.status
+                if (
+                    status == 401
+                    and data["detail"].find(
+                        "Authentication credentials were not provided."
+                    )
+                    != -1
+                ):
+                    if attempt == 1:
+                        return {
+                            "error": "Could not authenticate and post to {base_url}"
+                        }
+                    error = await self._get_api_token(base_url)
+                    if error:
+                        return error
+                    else:
+                        continue
+
+                if status in [200, 201, 204]:
+                    return {"status_code": resp.status, "json": data}
+            except aiohttp.client_exceptions.ClientConnectionError:
+                logger.info(
+                    f"Error while trying to post to {base_url}{suburl}  (Code {status})..."
+                )
+
+        else:
+            return {"error": f"Failed to post to {base_url}{suburl} (Code {status})"}
+
+    async def papr_article_request_review(self, article_claim, server_name):
+        with Session(self.engine) as session:
+            article = session.execute(
+                select(Article).filter_by(base_claim_name=article_claim)
+            ).scalar_one_or_none()
+
+            if not article:
+                return logger.error(
+                    f"Cannot send a review request for article {article_claim}: no such article found"
+                )
+
+            server = session.execute(
+                select(Server).filter_by(name=server_name)
+            ).scalar_one_or_none()
+
+            if not server:
+                return logger.error(
+                    f"Cannot send a review request for article {article_claim} to server {server_name}: no such server found"
+                )
+
+            payload = {
+                "title": article.title,
+                "claim_name": article.latest_manuscript.claim_name,
+                "author_list": article.authors,
+                "corresponding_author": article.channel_name,
+            }
+            return await self._post_to_url(server.url, "/api/submit/", payload)
 
     async def papr_article_create(
         self,
@@ -548,8 +708,11 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             if article.encryption_passphrase:
                 payload["encryption_passphrase"] = article.encryption_passphrase
 
+            # get server
             async with aiohttp.ClientSession() as session:
-                async with session.post(f"{url}/accept", json=payload) as resp:
+                async with session.post(
+                    f"{article.review_server.url}/accept", json=payload
+                ) as resp:
                     status_code = resp.status
                     msg = await resp.text()
 
@@ -625,7 +788,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
 
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{server_data['url']}/recommend", json=payload
+                f"{server_data['url']}/api/recommend", json=payload
             ) as resp:
                 status_code = resp.status
                 msg = await resp.text()

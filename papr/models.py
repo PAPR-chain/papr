@@ -38,20 +38,24 @@ class Article(Base):
     review_server = relationship("Server")
 
     @property
+    def latest_manuscript(self):
+        return self.manuscripts[-1]
+
+    @property
     def title(self):
-        return self.manuscripts[-1].title
+        return self.latest_manuscript.title
 
     @property
     def abstract(self):
-        return self.manuscripts[-1].abstract
+        return self.latest_manuscript.abstract
 
     @property
     def authors(self):
-        return self.manuscripts[-1].authors
+        return self.latest_manuscript.authors
 
     @property
     def tags(self):
-        return self.manuscripts[-1].tags
+        return self.latest_manuscript.tags
 
 
 class Manuscript(Base):

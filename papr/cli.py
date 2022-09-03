@@ -4,8 +4,6 @@ import json
 import functools
 import requests
 
-from papr.user import User
-
 DEFAULT_CONFIG = {
     "blockchain_name": "lbrycrd_testnet",
     "lbryum_servers": [("127.0.0.1", 50001)],
