@@ -328,7 +328,6 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
         abstract,
         authors,
         tags,
-        server=None,
         revision=0,
         encrypt=True,
         ignore_duplicate_names=False,
@@ -369,7 +368,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                 else:
                     claim_name = f"{base_claim_name}_r{revision}"
 
-                if server is None and not IS_TEST:
+                if article.review_server is None and not IS_TEST:
                     raise PaprException(
                         f"No server given for publishing the unreviewed manuscript {claim_name}"
                     )
@@ -426,7 +425,6 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
 
             logger.info(f"Manuscript published as {claim_name}!")
 
-            ## alert review server, give review/encryption passphrase
             _tags = ";".join(tags)
             man = Manuscript(
                 claim_name=claim_name,
@@ -481,6 +479,53 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
 
         self.headers = {"HTTP_AUTHORIZATION": f"Bearer {str(self.token_access)}"}
 
+    async def _get_url(self, base_url, suburl):
+        if self.headers == {}:
+            error = await self._get_api_token(base_url)
+            if error:
+                return error
+
+        for attempt in range(2):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        f"{base_url}{suburl}",
+                        headers=self.headers,
+                    ) as resp:
+                        msg = await resp.text()
+                        data = await resp.json()
+                        status = resp.status
+                if (
+                    status == 401
+                    and data["detail"].find(
+                        "Authentication credentials were not provided."
+                    )
+                    != -1
+                ):
+                    if attempt == 1:
+                        return {
+                            "error": f"Could not authenticate and get {base_url}",
+                            "status_code": status,
+                        }
+                    error = await self._get_api_token(base_url)
+                    if error:
+                        return error
+                    else:
+                        continue
+
+                if status in [200, 201, 204]:
+                    return {"status_code": resp.status, "json": data, "content": msg}
+            except aiohttp.client_exceptions.ClientConnectionError:
+                logger.info(
+                    f"Error while trying to get {base_url}{suburl}  (Code {status})..."
+                )
+
+        else:
+            return {
+                "error": f"Failed to get {base_url}{suburl} (Code {status})",
+                "status_code": status,
+            }
+
     async def _post_to_url(self, base_url, suburl, payload):
         if self.headers == {}:
             error = await self._get_api_token(base_url)
@@ -507,7 +552,10 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                 ):
                     if attempt == 1:
                         return {
-                            "error": "Could not authenticate and post to {base_url}"
+                            **logger.error(
+                                f"Could not authenticate and post to {base_url}"
+                            ),
+                            "status_code": status,
                         }
                     error = await self._get_api_token(base_url)
                     if error:
@@ -523,7 +571,10 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                 )
 
         else:
-            return {"error": f"Failed to post to {base_url}{suburl} (Code {status})"}
+            return {
+                **logger.error(f"Failed to post to {base_url}{suburl} (Code {status})"),
+                "status_code": status,
+            }
 
     async def papr_article_request_review(self, article_claim, server_name):
         with Session(self.engine) as session:
@@ -547,9 +598,11 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
 
             payload = {
                 "title": article.title,
+                "article": article.base_claim_name,
                 "claim_name": article.latest_manuscript.claim_name,
-                "author_list": article.authors,
+                "authors": article.authors,
                 "corresponding_author": article.channel_name,
+                "revision": article.revision,
             }
             return await self._post_to_url(server.url, "/api/submit/", payload)
 
@@ -588,7 +641,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             if server_name:
                 server = session.execute(
                     select(Server).filter_by(name=server_name)
-                ).scalar_one_or_none
+                ).scalar_one_or_none()
 
                 if not server:
                     return logger.error(
@@ -605,7 +658,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             )
 
             if server:
-                article.server = server
+                article.review_server = server
 
             article.review_passphrase = generate_human_readable_passphrase()
             ret["review_passphrase"] = article.review_passphrase
@@ -625,7 +678,6 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             abstract,
             authors,
             tags,
-            server=server,
             revision=0,
             encrypt=encrypt,
         )
@@ -728,6 +780,31 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
         return logger.info(
             f"Sent review acceptance of article {article.base_claim_name} to the server"
         )
+
+    async def papr_article_status(
+        self,
+        base_claim_name,
+    ):
+        with Session(self.engine) as session:
+            article = session.execute(
+                select(Article).filter_by(base_claim_name=base_claim_name)
+            ).scalar_one_or_none()
+
+            if article is None:
+                return logger.error(
+                    f"Cannot revise the article with claim name {base_claim_name}: such an article does not exists"
+                )
+
+            status = {
+                "reviewed": article.reviewed,
+                "revision": article.revision,
+                "review_server": article.review_server.name,
+            }
+            server_status = await self._get_url(
+                article.review_server.url, f"/api/status/{base_claim_name}"
+            )
+            status["article"] = server_status["json"]
+        return status
 
     async def _get_article_review_server(self, claim_name):
         res = await self.jsonrpc_get(claim_name)
