@@ -150,7 +150,9 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
         }
 
         async with aiohttp.ClientSession() as session:
-            async with session.post(f"{url}/api/register/", json=payload) as resp:
+            async with session.post(
+                f"{url}/api/channel/register", json=payload
+            ) as resp:
                 status_code = resp.status
                 data = await resp.json()
 
@@ -215,12 +217,14 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
 
         logger.info(f"Review created for submission {submission_claim_name}")
 
-    async def papr_review_save(self, reviewed_submission_claim_name: str, text: str):
+    async def papr_review_save(
+        self, reviewed_submission_claim_name: str, text: str, rating: int
+    ):
         with Session(self.engine) as session:
             session.execute(
                 update(Review)
                 .where(Review.submission_claim_name == reviewed_submission_claim_name)
-                .values(review_text=text)
+                .values(review_text=text, review_rating=rating)
             )
             # not found error
 
@@ -252,10 +256,12 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             review.signing_ts = datetime.datetime.utcfromtimestamp(signed["signing_ts"])
             session.commit()
 
-            link = f"{server.url}/api/review"
+            link = f"{server.url}/api/review/submit"
 
         # TODO: encrypt for server?
         payload = {
+            "manuscript": review.submission_claim_name,
+            "rating": review.review_rating,  # Add to review so that it is signed
             "review": full_review,
             "signature": signed["signature"],
             "signing_ts": signed["signing_ts"],
@@ -399,12 +405,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                 z.writestr(
                     f"Manuscript_{claim_name}.pdf", processed_file
                 )  # pdf hardcoded
-                """
-                z.writestr(
-                    f"{claim_name}_key.pub", article.public_key
-                )  # just name? useful?
-                """
-                # Add reference to reviewing server
+                z.writestr("server.json", json.dumps(article.review_server.information))
 
             # Thumbnail
             try:
@@ -564,7 +565,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                         continue
 
                 if status in [200, 201, 204]:
-                    return {"status_code": resp.status, "json": data}
+                    return {"status_code": resp.status, **data}
             except aiohttp.client_exceptions.ClientConnectionError:
                 logger.info(
                     f"Error while trying to post to {base_url}{suburl}  (Code {status})..."
@@ -604,7 +605,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                 "corresponding_author": article.channel_name,
                 "revision": article.revision,
             }
-            return await self._post_to_url(server.url, "/api/submit/", payload)
+            return await self._post_to_url(server.url, "/api/article/submit", payload)
 
     async def papr_article_create(
         self,
@@ -771,7 +772,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
             if status_code != 200:
                 session.rollback()
                 return logger.error(
-                    f"Error while sending acceptance of {base_claim_name} to the server.\n Status code: {status_code}\nReason: {msg}"
+                    f"Error while sending acceptance of {base_claim_name} to the server.\nStatus code: {status_code}\nReason: {msg}"
                 )
 
             session.add(article)
@@ -801,7 +802,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                 "review_server": article.review_server.name,
             }
             server_status = await self._get_url(
-                article.review_server.url, f"/api/status/{base_claim_name}"
+                article.review_server.url, f"/api/article/status/{base_claim_name}"
             )
             status["article"] = server_status["json"]
         return status
@@ -809,12 +810,10 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
     async def _get_article_review_server(self, claim_name):
         res = await self.jsonrpc_get(claim_name)
 
-        if "error" in res:
-            return logger.error(f"Could not resolve {claim_name}")
+        if isinstance(res, dict):
+            return logger.error(f"Could not resolve {claim_name}: {res['error']}")
 
-        path = res["results"]["download_path"]
-
-        with ZipFile(path) as z:
+        with zipfile.ZipFile(res.download_path) as z:
             zipped_files = z.namelist()
             if "server.json" not in zipped_files:
                 return logger.error(
@@ -822,7 +821,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
                 )
 
             try:
-                server_data = json.reads(z.read("server.json"))
+                server_data = json.loads(z.read("server.json"))
             except json.JSONDecodeError:
                 return logger.error(
                     f"Could not decode JSON from manuscript {claim_name}"
@@ -833,7 +832,7 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
     async def papr_reviewer_recommend(
         self, claim_name, reviewer_name, reviewer_channel="", reviewer_email=""
     ):
-        if not email and not reviewer_channel:
+        if not reviewer_email and not reviewer_channel:
             return logger.error(
                 f"Cannot submit reviewer recommendation: no contact information provided. A channel or an email is required."
             )
@@ -852,30 +851,23 @@ class PaprDaemon(Daemon, metaclass=PAPRJSONRPCServerType):
         # Add recommendation degree
 
         payload = {
-            "claim_name": claim_name,
+            "article": "_".join(claim_name.split("_")[:-1]),
             "reviewer_name": reviewer_name,
-            "recommender_channel": self.channel_name,
         }
 
         if reviewer_channel:
-            payload["reviewer_channel"] = reviewer_channel
+            payload["reviewer"] = reviewer_channel
 
-        if email:
+        if reviewer_email:
+            # Currently would not work
             payload["reviewer_email"] = reviewer_email
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{server_data['url']}/api/recommend", json=payload
-            ) as resp:
-                status_code = resp.status
-                msg = await resp.text()
+        if not self.headers:
+            self._get_api_token(server_data["url"])
 
-        if status_code != 200:
-            return logger.error(
-                f"Error while sending reviewer recommendation for {base_claim_name} to the server.\n Status code: {status_code}\nReason: {msg}"
-            )
-
-        return logger.info(f"Reviewer recommendation sent to the server, thank you!")
+        return await self._post_to_url(
+            server_data["url"], "/api/review/recommend", payload
+        )
 
 
 def run_daemon(daemon):

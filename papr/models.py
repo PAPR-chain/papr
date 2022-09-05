@@ -95,6 +95,7 @@ class Review(Base):
 
     review_date = Column(DateTime())
     review_text = Column(Text())
+    review_rating = Column(Integer())
     review_signature = Column(Text())  # String
     review_signature_timestamp = Column(Text())  # String
 
@@ -120,3 +121,12 @@ class Server(Base):
 
     public_key = Column(String(KEY_LENGTH))
     reviewed_articles = relationship("Article", back_populates="review_server")
+
+    @property
+    def information(self):
+        return {
+            "name": self.name,
+            "channel_name": self.channel_name,
+            "url": self.url,
+            "public_key": self.public_key,
+        }
