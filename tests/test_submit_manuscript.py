@@ -2,7 +2,9 @@ import asyncio
 import os
 import tempfile
 import warnings
+import json
 from zipfile import ZipFile
+from aioresponses import CallbackResult, aioresponses
 
 from lbry.testcase import IntegrationTestCase, CommandTestCase
 from lbry.crypto.hash import sha256
@@ -34,6 +36,17 @@ class ManuscriptTests(PaprDaemonTestCase):
 
         await self.daemon.channel_load("@Steve")
 
+        with aioresponses() as m:
+            m.post(
+                "http://reviewserver.org/api/channel/register",
+                status=201,
+                payload={
+                    "name": "Test Review Server",
+                    "channel_name": "@TestReviewServer",
+                },
+            )
+            await self.daemon.papr_server_add("http://reviewserver.org")
+
     async def test_create_unencrypted_manuscript(self):
         file_path = os.path.join(TESTS_DIR, "data", "document1.pdf")
         hash_i = file_sha256(file_path)
@@ -46,6 +59,7 @@ class ManuscriptTests(PaprDaemonTestCase):
             abstract="we did great stuff",
             authors="Steve Tremblay and Bob Roberts",
             tags=["test"],
+            server_name="Test Review Server",
             encrypt=False,
         )
 
@@ -72,13 +86,17 @@ class ManuscriptTests(PaprDaemonTestCase):
         with ZipFile(os.path.join(self.daemon.conf.data_dir, "test_preprint.zip")) as z:
             zipped_files = z.namelist()
 
-            assert len(zipped_files) == 1
+            assert len(zipped_files) == 2
             assert "Manuscript_test_preprint.pdf" in zipped_files
-            # assert "test_preprint_key.pub" in zipped_files
+            assert "server.json" in zipped_files
 
             pdf = z.read("Manuscript_test_preprint.pdf")
             hash_f = sha256(pdf)
             assert hash_f == hash_i
+
+            server_data = json.loads(z.read("server.json"))
+            self.assertEqual(server_data["name"], "Test Review Server")
+            self.assertEqual(server_data["channel_name"], "@TestReviewServer")
 
     async def test_create_encrypted_manuscript(self):
         file_path = os.path.join(TESTS_DIR, "data", "document1.pdf")
@@ -91,6 +109,7 @@ class ManuscriptTests(PaprDaemonTestCase):
             title="My title",
             abstract="we did great stuff",
             authors="Steve Tremblay and Bob Roberts",
+            server_name="Test Review Server",
             tags=["test"],
             encrypt=True,
         )
@@ -124,9 +143,9 @@ class ManuscriptTests(PaprDaemonTestCase):
         with ZipFile(os.path.join(self.daemon.conf.data_dir, "test_preprint.zip")) as z:
             zipped_files = z.namelist()
 
-            assert len(zipped_files) == 1
+            assert len(zipped_files) == 2
             assert "Manuscript_test_preprint.pdf" in zipped_files
-            # assert "test_preprint_key.pub" in zipped_files
+            assert "server.json" in zipped_files
 
             data_enc = z.read("Manuscript_test_preprint.pdf")
             hash_enc = sha256(data_enc)
@@ -135,6 +154,10 @@ class ManuscriptTests(PaprDaemonTestCase):
             data_dec = better_aes_decrypt(passphrase, data_enc)
             hash_dec = sha256(data_dec)
             assert hash_dec == hash_i
+
+            server_data = json.loads(z.read("server.json"))
+            self.assertEqual(server_data["name"], "Test Review Server")
+            self.assertEqual(server_data["channel_name"], "@TestReviewServer")
 
     async def test_create_duplicate_manuscript(self):
         file_path = os.path.join(TESTS_DIR, "data", "document1.pdf")
@@ -146,6 +169,7 @@ class ManuscriptTests(PaprDaemonTestCase):
             title="My title",
             abstract="we did great stuff",
             authors="Steve Tremblay and Bob Roberts",
+            server_name="Test Review Server",
             tags=["test"],
             encrypt=True,
         )
@@ -167,6 +191,7 @@ class ManuscriptTests(PaprDaemonTestCase):
                 title="My other title",
                 abstract="we did some more great stuff",
                 authors="Steve Tremblay and Bob Roberts",
+                server_name="Test Review Server",
                 tags=["test"],
                 encrypt=False,
             )
@@ -187,6 +212,7 @@ class ManuscriptTests(PaprDaemonTestCase):
             title="My title",
             abstract="we did great stuff",
             authors="Steve Tremblay and Bob Roberts",
+            server_name="Test Review Server",
             tags=["test"],
             encrypt=False,
         )
@@ -232,9 +258,9 @@ class ManuscriptTests(PaprDaemonTestCase):
         with ZipFile(os.path.join(self.daemon.conf.data_dir, "test_r1.zip")) as z:
             zipped_files = z.namelist()
 
-            assert len(zipped_files) == 1
+            assert len(zipped_files) == 2
             assert "Manuscript_test_r1.pdf" in zipped_files
-            # assert "test_preprint_key.pub" in zipped_files
+            assert "server.json" in zipped_files
 
             pdf = z.read("Manuscript_test_r1.pdf")
             hash_f = sha256(pdf)
